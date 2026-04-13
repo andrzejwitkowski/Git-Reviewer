@@ -16,7 +16,7 @@ export const buildFileTree = (paths) => {
       if (!existing) {
         existing = isFile
           ? { type: 'file', name: part, path: currentPath }
-          : { type: 'directory', name: part, children: [] };
+          : { type: 'directory', name: part, path: currentPath, children: [] };
         level.push(existing);
       }
 

@@ -14,13 +14,16 @@ export function createRepoFixture() {
   runGit(root, ['config', 'user.email', 'git-reviewer@example.com']);
 
   writeRepoFile(root, 'src/lib.rs', sourceLines('base value'));
-  writeRepoFile(root, 'docs/readme.md', 'base docs\nline 2\nline 3\n');
+  writeRepoFile(root, 'examples/example.ts', 'export const baseAnswer = { ok: false, value: 0 };\n');
+  writeRepoFile(root, 'config/settings.json', '{\n  "ok": false,\n  "count": 0\n}\n');
+  writeRepoFile(root, 'config/layout.xml', '<root attr="base">value</root>\n');
+  writeRepoFile(root, 'docs/readme.md', '# base docs\nline 2\nline 3\n');
   runGit(root, ['add', '-A']);
   runGit(root, ['commit', '-m', 'base']);
   const baseSha = runGit(root, ['rev-parse', 'HEAD']).trim();
 
   runGit(root, ['update-ref', 'refs/remotes/origin/release', baseSha]);
-  writeRepoFile(root, 'docs/readme.md', 'main baseline\nline 2\nline 3\n');
+  writeRepoFile(root, 'docs/readme.md', '# main baseline\nline 2\nline 3\n');
   runGit(root, ['add', '-A']);
   runGit(root, ['commit', '-m', 'main baseline']);
   const mainSha = runGit(root, ['rev-parse', 'HEAD']).trim();
@@ -29,11 +32,14 @@ export function createRepoFixture() {
   runGit(root, ['checkout', '-b', 'feature/shell']);
 
   writeRepoFile(root, 'src/lib.rs', sourceLines('feature line first'));
+  writeRepoFile(root, 'examples/example.ts', 'export const answer = { ok: true, value: 7 };\n');
+  writeRepoFile(root, 'config/settings.json', '{\n  "ok": true,\n  "count": 7\n}\n');
+  writeRepoFile(root, 'config/layout.xml', '<root attr="feature">value</root>\n');
+  writeRepoFile(root, 'docs/readme.md', '# changed docs\nline 2\nline 3\n');
   runGit(root, ['add', '-A']);
   runGit(root, ['commit', '-m', 'first feature']);
 
   writeRepoFile(root, 'src/lib.rs', sourceLines('feature line second'));
-  writeRepoFile(root, 'docs/readme.md', 'changed docs\nline 2\nline 3\n');
   runGit(root, ['add', '-A']);
   runGit(root, ['commit', '-m', 'second feature']);
 

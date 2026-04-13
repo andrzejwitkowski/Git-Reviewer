@@ -27,6 +27,33 @@ async fn serves_embedded_shell_at_root() {
 
     assert!(html.contains("data-testid=\"repo-path\""));
     assert!(html.contains("/assets/app.js"));
+    assert!(html.contains("/assets/tree-and-highlight.css"));
+}
+
+#[tokio::test]
+async fn serves_tree_and_highlight_stylesheet() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/assets/tree-and-highlight.css")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let css = String::from_utf8(body.to_vec()).expect("css should be utf8");
+
+    assert!(css.contains(".file-tree-toggle"));
+    assert!(css.contains(".diff-code .token.keyword"));
 }
 
 #[tokio::test]
