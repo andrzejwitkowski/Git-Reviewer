@@ -1,0 +1,109 @@
+.file-tree-node,
+.file-tree-file {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0.45rem 0.5rem;
+  border-radius: 0.4rem;
+}
+
+.file-tree-node:hover,
+.file-tree-file:hover,
+.file-tree-file.is-active {
+  background: #1e293b;
+}
+
+.file-tree-node {
+  justify-content: flex-start;
+}
+
+.file-tree-toggle {
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: inherit;
+  border-radius: 0.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.file-tree-leading,
+.file-tree-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.file-viewed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+  border: 1px solid #22c55e;
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+
+.file-card-header {
+  padding: 0.75rem 1rem;
+  background: #111827;
+  border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.file-viewed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.file-viewed-toggle input {
+  margin: 0;
+}
+
+.diff-code .token.comment {
+  color: #94a3b8;
+}
+
+.diff-code .token.keyword,
+.diff-code .token.strong,
+.diff-code .token.tag {
+  color: #c084fc;
+}
+
+.diff-code .token.string,
+.diff-code .token.attr-name,
+.diff-code .token.link {
+  color: #86efac;
+}
+
+.diff-code .token.number,
+.diff-code .token.property,
+.diff-code .token.title {
+  color: #7dd3fc;
+}
+
+.diff-code .token.operator,
+.diff-code .token.punctuation,
+.diff-code .token.emphasis {
+  color: #fbbf24;
+}

@@ -1,4 +1,5 @@
 import { activeScope, loadStoredComments } from '../core/comment-store.js';
+import { loadStoredReviewPreferences } from '../core/review-preferences.js';
 import { createEmptyCommitReview } from './empty-review.js';
 import { resetTransientReviewState } from './review-state-reset.js';
 import { buildReviewRequest, selectInitialPath } from './review-request.js';
@@ -28,6 +29,7 @@ export const updateReviewBase = async (port, state, storage, baseBranch) => {
         state.selectedCommit = null;
         state.review = review;
         state.comments = loadStoredComments(storage, activeScope(state.repoContext, review));
+        state.viewedPaths = loadStoredReviewPreferences(storage, activeScope(state.repoContext, review)).viewedPaths;
         state.selectedPath = null;
         state.isLoading = false;
         return true;
@@ -53,6 +55,7 @@ export const updateReviewBase = async (port, state, storage, baseBranch) => {
   state.selectedCommit = selectedCommit;
   state.review = review;
   state.comments = loadStoredComments(storage, activeScope(state.repoContext, review));
+  state.viewedPaths = loadStoredReviewPreferences(storage, activeScope(state.repoContext, review)).viewedPaths;
   state.selectedPath = review.files.find((file) => file.path === state.selectedPath)?.path
     ?? selectInitialPath(review.files);
   state.isLoading = false;

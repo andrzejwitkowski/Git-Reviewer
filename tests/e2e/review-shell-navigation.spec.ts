@@ -14,6 +14,7 @@ test('renders review shell and supports basic navigation', async ({ page }) => {
     await expect(page.getByTestId('file-tree')).toContainText('src');
     await expect(page.getByTestId('file-tree')).toContainText('docs');
     await expect(page.getByRole('button', { name: 'lib.rs' })).toBeVisible();
+    await page.getByRole('button', { name: 'lib.rs' }).click();
     await expect(page.getByRole('button', { name: 'readme.md' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'src/lib.rs' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'docs/readme.md' })).toHaveCount(0);
@@ -43,8 +44,9 @@ test('keeps the latest base-branch selection when earlier responses finish later
 
   await page.route(/\/api\/review\?base=origin(?:%2F|\/)release$/, async (route) => {
     try {
+      const response = await route.fetch();
       await new Promise((resolve) => setTimeout(resolve, 600));
-      await route.fulfill({ response: await route.fetch() });
+      await route.fulfill({ response });
     } finally {
       resolveReleaseReview();
     }

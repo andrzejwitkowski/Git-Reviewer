@@ -1,5 +1,6 @@
 import { createShellState } from './core/review-shell-state.js';
 import { activeScope, saveStoredComments } from './core/comment-store.js';
+import { saveStoredReviewPreferences, setViewedPath } from './core/review-preferences.js';
 import { buildLineCatalog, commentIndex, createCommentDraft } from './core/review-comments.js';
 import { loadShell } from './use-cases/load-shell.js';
 import { reloadShell } from './use-cases/reload-shell.js';
@@ -61,6 +62,21 @@ const bootstrap = async () => {
     },
     onFileSelect: (path) => {
       state.selectedPath = path;
+      renderShell();
+    },
+    onDirectoryToggle: (path) => {
+      if (state.collapsedDirectories.includes(path)) {
+        state.collapsedDirectories = state.collapsedDirectories.filter((entry) => entry !== path);
+      } else {
+        state.collapsedDirectories = state.collapsedDirectories.concat(path);
+      }
+      renderShell();
+    },
+    onViewedChange: (path, viewed) => {
+      state.viewedPaths = setViewedPath(state.viewedPaths, path, viewed);
+      saveStoredReviewPreferences(storage, activeScope(state.repoContext, state.review), {
+        viewedPaths: state.viewedPaths
+      });
       renderShell();
     },
     onLargeFileFetch: async (path) => {

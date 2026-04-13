@@ -35,39 +35,73 @@ export const renderTree = (node, state, hooks) => {
   node.innerHTML = '';
   const tree = buildFileTree(files.map((file) => file.path));
   const commentCounts = countCommentsByPath(state.comments);
-  tree.forEach((entry) => node.appendChild(renderTreeEntry(node.ownerDocument, entry, state.selectedPath, hooks, commentCounts)));
+  const viewedPaths = new Set(state.viewedPaths);
+  const collapsedDirectories = new Set(state.collapsedDirectories);
+  tree.forEach((entry) => node.appendChild(renderTreeEntry(
+    node.ownerDocument,
+    entry,
+    state.selectedPath,
+    hooks,
+    commentCounts,
+    viewedPaths,
+    collapsedDirectories
+  )));
 };
 
-const renderTreeEntry = (documentRef, entry, selectedPath, hooks, commentCounts) => {
+const renderTreeEntry = (documentRef, entry, selectedPath, hooks, commentCounts, viewedPaths, collapsedDirectories) => {
   if (entry.type === 'directory') {
     const wrapper = documentRef.createElement('div');
     const label = documentRef.createElement('div');
+    const toggle = documentRef.createElement('button');
+    const name = documentRef.createElement('span');
     const group = documentRef.createElement('div');
+    const isCollapsed = collapsedDirectories.has(entry.path);
 
     label.className = 'file-tree-node';
-    label.textContent = entry.name;
+    toggle.type = 'button';
+    toggle.className = 'file-tree-toggle';
+    toggle.dataset.testid = 'tree-toggle';
+    toggle.setAttribute('aria-expanded', String(!isCollapsed));
+    toggle.textContent = isCollapsed ? '+' : '-';
+    name.textContent = entry.name;
+    label.append(toggle, name);
     group.className = 'file-tree-group';
+    group.classList.toggle('hidden', isCollapsed);
     entry.children.forEach((child) => {
-      group.appendChild(renderTreeEntry(documentRef, child, selectedPath, hooks, commentCounts));
+      group.appendChild(renderTreeEntry(documentRef, child, selectedPath, hooks, commentCounts, viewedPaths, collapsedDirectories));
     });
+    toggle.addEventListener('click', () => hooks.onDirectoryToggle(entry.path));
     wrapper.append(label, group);
     return wrapper;
   }
 
   const button = documentRef.createElement('button');
+  const leading = documentRef.createElement('span');
   const name = documentRef.createElement('span');
+  const trailing = documentRef.createElement('span');
   button.type = 'button';
   button.className = `file-tree-file${selectedPath === entry.path ? ' is-active' : ''}`;
+  leading.className = 'file-tree-leading';
+  trailing.className = 'file-tree-trailing';
+  if (viewedPaths.has(entry.path)) {
+    const viewedBadge = documentRef.createElement('span');
+    viewedBadge.className = 'file-viewed-badge';
+    viewedBadge.dataset.testid = 'file-viewed-badge';
+    viewedBadge.textContent = '✓';
+    leading.appendChild(viewedBadge);
+  }
   name.textContent = entry.name;
-  button.appendChild(name);
+  leading.appendChild(name);
+  button.appendChild(leading);
   const count = commentCounts.get(entry.path) || 0;
   if (count > 0) {
     const badge = documentRef.createElement('span');
     badge.className = 'file-comment-count';
     badge.dataset.testid = 'file-comment-count';
     badge.textContent = String(count);
-    button.appendChild(badge);
+    trailing.appendChild(badge);
   }
+  button.appendChild(trailing);
   button.addEventListener('click', () => hooks.onFileSelect(entry.path));
   return button;
 };

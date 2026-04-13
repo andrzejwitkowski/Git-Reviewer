@@ -13,6 +13,10 @@ pub fn get(path: &str) -> Option<EmbeddedAsset> {
             content: include_bytes!("../../../../web/styles.css"),
             content_type: "text/css; charset=utf-8",
         }),
+        "tree-and-highlight.css" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/tree-and-highlight.css"),
+            content_type: "text/css; charset=utf-8",
+        }),
         "app.js" => Some(EmbeddedAsset {
             content: include_bytes!("../../../../web/app.js"),
             content_type: "application/javascript; charset=utf-8",
@@ -23,6 +27,14 @@ pub fn get(path: &str) -> Option<EmbeddedAsset> {
         }),
         "core/file-tree.js" => Some(EmbeddedAsset {
             content: include_bytes!("../../../../web/core/file-tree.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "core/review-preferences.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/core/review-preferences.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "core/syntax-highlight.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/core/syntax-highlight.js"),
             content_type: "application/javascript; charset=utf-8",
         }),
         "use-cases/load-shell.js" => Some(EmbeddedAsset {

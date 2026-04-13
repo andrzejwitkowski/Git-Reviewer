@@ -1,5 +1,6 @@
 import { activeScope, loadStoredComments } from '../core/comment-store.js';
 import { buildReviewRequest, selectInitialPath } from './review-request.js';
+import { loadStoredReviewPreferences } from '../core/review-preferences.js';
 
 export const loadShell = async (port, state, storage) => {
   state.isLoading = true;
@@ -15,5 +16,7 @@ export const loadShell = async (port, state, storage) => {
   state.repoSnapshot = repoSnapshot;
   state.selectedPath = selectInitialPath(review.files);
   state.comments = loadStoredComments(storage, activeScope(repoContext, review));
+  state.viewedPaths = loadStoredReviewPreferences(storage, activeScope(repoContext, review)).viewedPaths;
+  state.collapsedDirectories = [];
   state.isLoading = false;
 };

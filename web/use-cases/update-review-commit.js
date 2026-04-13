@@ -1,4 +1,5 @@
 import { activeScope, loadStoredComments } from '../core/comment-store.js';
+import { loadStoredReviewPreferences } from '../core/review-preferences.js';
 import { resetTransientReviewState } from './review-state-reset.js';
 import { buildReviewRequest, selectInitialPath } from './review-request.js';
 
@@ -23,6 +24,7 @@ export const updateReviewCommit = async (port, state, storage, commitSha) => {
     state.selectedCommit = commitSha;
     state.review = review;
     state.comments = loadStoredComments(storage, activeScope(state.repoContext, review));
+    state.viewedPaths = loadStoredReviewPreferences(storage, activeScope(state.repoContext, review)).viewedPaths;
     state.selectedPath = selectInitialPath(review.files);
     state.isLoading = false;
     return true;

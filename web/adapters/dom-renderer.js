@@ -1,6 +1,7 @@
 import { commentIndex, staleComments } from '../core/review-comments.js';
 import { escapeHtml } from '../core/file-tree.js';
 import { renderBranches, renderCommitSelect, renderReviewMode, renderTree } from './dom-renderer-helpers.js';
+import { renderHighlightedCode } from '../core/syntax-highlight.js';
 
 export const createShellRenderer = (documentRef, hooks) => {
   const nodes = selectNodes(documentRef);
@@ -81,16 +82,29 @@ const renderDiff = (node, state, hooks) => {
   const files = state.review?.files || [];
   const selected = files.filter((file) => !state.selectedPath || file.path === state.selectedPath);
   const comments = commentIndex(state.comments);
-  node.innerHTML = selected.map((file) => renderFileCard(file, state.diffMode, comments, state.collapsedCommentIds)).join('')
+  node.innerHTML = selected.map((file) => renderFileCard(
+    file,
+    state.diffMode,
+    comments,
+    state.collapsedCommentIds,
+    state.viewedPaths.includes(file.path)
+  )).join('')
     || '<div class="panel-state">Select a file to inspect its diff.</div>';
   attachLineEvents(node, hooks);
   attachLargeFileEvents(node, hooks);
   attachInlineCommentEvents(node, hooks);
+  attachViewedToggleEvents(node, hooks);
 };
 
-const renderFileCard = (file, diffMode, comments, collapsedCommentIds) => `
+const renderFileCard = (file, diffMode, comments, collapsedCommentIds, viewed) => `
   <article class="file-card">
-    <header class="file-card-header">${escapeHtml(file.path)}</header>
+    <header class="file-card-header">
+      <span>${escapeHtml(file.path)}</span>
+      <label class="file-viewed-toggle">
+        <input type="checkbox" data-testid="file-viewed-checkbox" data-path="${escapeHtml(file.path)}"${viewed ? ' checked' : ''}>
+        <span>Viewed</span>
+      </label>
+    </header>
     ${renderFileBody(file, diffMode, comments, collapsedCommentIds)}
   </article>
 `;
@@ -129,14 +143,15 @@ const renderLine = (file, line, diffMode, comments, collapsedCommentIds) => {
   const attributes = primary.number == null
     ? ''
     : ` data-line-key="${primary.path}::${primary.side}::${primary.number}" data-path="${primary.path}"`;
+  const highlighted = `<span class="diff-code">${renderHighlightedCode(file.path, line.text)}</span>`;
 
   if (diffMode === 'split') {
     return `
       <tr class="diff-line diff-line-${line.kind}" data-testid="diff-line" data-kind="${line.kind}"${attributes}>
         <td class="line-number">${line.oldLineNumber ?? ''}</td>
-        <td>${line.kind === 'added' ? '' : escapeHtml(line.text)}</td>
+        <td>${line.kind === 'added' ? '' : highlighted}</td>
         <td class="line-number">${line.newLineNumber ?? ''}</td>
-        <td>${line.kind === 'removed' ? '' : escapeHtml(line.text)} ${marker}</td>
+        <td>${line.kind === 'removed' ? '' : `${highlighted} ${marker}`}</td>
       </tr>
       ${inlineComment}
     `;
@@ -146,7 +161,7 @@ const renderLine = (file, line, diffMode, comments, collapsedCommentIds) => {
     <tr class="diff-line diff-line-${line.kind}" data-testid="diff-line" data-kind="${line.kind}"${attributes}>
       <td class="line-number">${line.oldLineNumber ?? ''}</td>
       <td class="line-number">${line.newLineNumber ?? ''}</td>
-      <td>${escapeHtml(line.text)} ${marker}</td>
+      <td>${highlighted} ${marker}</td>
     </tr>
     ${inlineComment}
   `;
@@ -198,6 +213,13 @@ const attachInlineCommentEvents = (node, hooks) => {
       event.stopPropagation();
       hooks.onInlineCommentToggle(button.dataset.commentId);
     });
+  });
+};
+
+const attachViewedToggleEvents = (node, hooks) => {
+  node.querySelectorAll('[data-testid="file-viewed-checkbox"]').forEach((checkbox) => {
+    checkbox.checked = checkbox.hasAttribute('checked');
+    checkbox.addEventListener('change', () => hooks.onViewedChange(checkbox.dataset.path, checkbox.checked));
   });
 };
 

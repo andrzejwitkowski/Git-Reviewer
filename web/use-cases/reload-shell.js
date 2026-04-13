@@ -1,4 +1,5 @@
 import { activeScope, loadStoredComments, moveStoredComments, saveStoredComments } from '../core/comment-store.js';
+import { loadStoredReviewPreferences } from '../core/review-preferences.js';
 import { remapComments } from '../core/review-comments.js';
 import { createEmptyCommitReview } from './empty-review.js';
 import { resetTransientReviewState } from './review-state-reset.js';
@@ -28,6 +29,7 @@ export const reloadShell = async (port, state, storage) => {
       state.review = review;
       state.selectedPath = null;
       state.comments = persistedComments;
+      state.viewedPaths = loadStoredReviewPreferences(storage, nextScope).viewedPaths;
       state.pendingRefresh = false;
       state.repoSnapshot = await port.loadRepoStatus();
       state.isLoading = false;
@@ -59,6 +61,7 @@ export const reloadShell = async (port, state, storage) => {
   state.selectedPath = review.files.find((file) => file.path === state.selectedPath)?.path
     || selectInitialPath(review.files);
   state.comments = persistedComments;
+  state.viewedPaths = loadStoredReviewPreferences(storage, nextScope).viewedPaths;
   state.pendingRefresh = false;
   state.repoSnapshot = await port.loadRepoStatus();
   state.isLoading = false;
