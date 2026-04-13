@@ -33,6 +33,26 @@ pub fn get(path: &str) -> Option<EmbeddedAsset> {
             content: include_bytes!("../../../../web/use-cases/update-review-base.js"),
             content_type: "application/javascript; charset=utf-8",
         }),
+        "use-cases/update-review-mode.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/use-cases/update-review-mode.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "use-cases/update-review-commit.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/use-cases/update-review-commit.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "use-cases/review-request.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/use-cases/review-request.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "use-cases/empty-review.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/use-cases/empty-review.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "use-cases/review-state-reset.js" => Some(EmbeddedAsset {
+            content: include_bytes!("../../../../web/use-cases/review-state-reset.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
         "ports/review-port.js" => Some(EmbeddedAsset {
             content: include_bytes!("../../../../web/ports/review-port.js"),
             content_type: "application/javascript; charset=utf-8",

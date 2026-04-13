@@ -1,10 +1,97 @@
 mod support;
 
 use git_reviewer::adapters::outbound::git_cli::GitCliRepository;
-use git_reviewer::application::ports::git_repository::GitRepository;
+use git_reviewer::application::ports::git_repository::{GitRepository, GitRepositoryError};
 use git_reviewer::application::use_cases::load_review::{LoadReview, LoadReviewRequest};
-use git_reviewer::domain::review::DiffChange;
+use git_reviewer::domain::review::{DiffChange, ReviewMode};
 use support::git_repo::TempGitRepo;
+
+#[test]
+fn git_cli_repository_lists_branch_commits_newest_first() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("notes.txt", "base\n");
+    let base_sha = repo.commit_all("base");
+    repo.create_remote_tracking_branch("origin/main", &base_sha);
+    repo.checkout_new_branch("feature/review");
+
+    repo.write_file("notes.txt", "base\nfirst\n");
+    let first_sha = repo.commit_all("first feature commit");
+    repo.write_file("notes.txt", "base\nfirst\nsecond\n");
+    let second_sha = repo.commit_all("second feature commit");
+
+    let repository = GitCliRepository::new(repo.path());
+    let commits = repository
+        .commit_summaries("origin/main")
+        .expect("commit summaries should load");
+
+    assert_eq!(commits.len(), 2);
+    assert_eq!(commits[0].sha, second_sha);
+    assert_eq!(commits[0].short_sha, second_sha[..7].to_string());
+    assert_eq!(commits[0].subject, "second feature commit");
+    assert_eq!(commits[1].sha, first_sha);
+    assert_eq!(commits[1].subject, "first feature commit");
+}
+
+#[test]
+fn git_cli_repository_returns_single_commit_diff() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("notes.txt", "base\n");
+    let base_sha = repo.commit_all("base");
+    repo.create_remote_tracking_branch("origin/main", &base_sha);
+    repo.checkout_new_branch("feature/review");
+
+    repo.write_file("notes.txt", "base\nfirst\n");
+    repo.commit_all("first feature commit");
+    repo.write_file("notes.txt", "base\nfirst\nsecond\n");
+    let selected_sha = repo.commit_all("second feature commit");
+
+    let repository = GitCliRepository::new(repo.path());
+    let diff = repository
+        .raw_commit_diff(&selected_sha)
+        .expect("single commit diff should load");
+
+    assert_eq!(diff.base_branch, "commit");
+    assert_eq!(diff.head_sha, selected_sha);
+    assert!(!diff.merge_base_sha.is_empty());
+    assert!(diff.diff.contains("+second"));
+    assert!(!diff.diff.contains("+first"));
+}
+
+#[test]
+fn git_cli_repository_rejects_unknown_commit_for_single_commit_diff() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("notes.txt", "base\n");
+    repo.commit_all("base");
+
+    let repository = GitCliRepository::new(repo.path());
+    let error = repository
+        .raw_commit_diff("deadbeef")
+        .expect_err("unknown commit should fail");
+
+    assert_eq!(error, GitRepositoryError::InvalidCommit);
+}
+
+#[test]
+fn git_cli_repository_returns_local_changes_diff() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("notes.txt", "base\n");
+    let head_sha = repo.commit_all("base");
+    repo.write_file("notes.txt", "base\nworktree\n");
+
+    let repository = GitCliRepository::new(repo.path());
+    let diff = repository
+        .raw_local_changes_diff()
+        .expect("local changes diff should load");
+
+    assert_eq!(diff.base_branch, "local");
+    assert_eq!(diff.merge_base_sha, head_sha);
+    assert_eq!(diff.head_sha, head_sha);
+    assert!(diff.diff.contains("+worktree"));
+}
 
 #[test]
 fn load_review_uses_merge_base_and_parses_rename_delete_and_binary_changes() {
@@ -37,7 +124,9 @@ fn load_review_uses_merge_base_and_parses_rename_delete_and_binary_changes() {
     let repository = GitCliRepository::new(repo.path());
     let review = LoadReview::new(&repository)
         .execute(LoadReviewRequest {
+            review_mode: ReviewMode::Branch,
             selected_base: Some("origin/main".to_string()),
+            selected_commit: None,
             expanded_paths: vec![],
         })
         .expect("review should load");
@@ -127,6 +216,28 @@ fn git_cli_repository_returns_snapshot_and_file_contents() {
 }
 
 #[test]
+fn repo_snapshot_local_changes_sha_changes_when_modified_content_changes() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("tracked.txt", "base\n");
+    repo.commit_all("base");
+    repo.write_file("tracked.txt", "first worktree change\n");
+
+    let repository = GitCliRepository::new(repo.path());
+    let first = repository
+        .repo_snapshot()
+        .expect("first snapshot should load");
+
+    repo.write_file("tracked.txt", "second worktree change\n");
+
+    let second = repository
+        .repo_snapshot()
+        .expect("second snapshot should load");
+
+    assert_ne!(first.local_changes_sha, second.local_changes_sha);
+}
+
+#[test]
 fn load_review_parses_paths_with_spaces_and_trailing_tabs_from_git_output() {
     let repo = TempGitRepo::new();
 
@@ -141,7 +252,9 @@ fn load_review_parses_paths_with_spaces_and_trailing_tabs_from_git_output() {
     let repository = GitCliRepository::new(repo.path());
     let review = LoadReview::new(&repository)
         .execute(LoadReviewRequest {
+            review_mode: ReviewMode::Branch,
             selected_base: Some("origin/main".to_string()),
+            selected_commit: None,
             expanded_paths: vec![],
         })
         .expect("review should load");

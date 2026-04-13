@@ -2,6 +2,8 @@ use crate::application::ports::git_repository::{GitRepository, GitRepositoryErro
 use crate::domain::review::{AnchorSide, ReviewCommentDraft};
 use std::collections::BTreeMap;
 
+const WORKTREE_REVISION: &str = "WORKTREE";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildClipboardExportRequest {
     pub head_sha: String,
@@ -45,10 +47,7 @@ where
 
         for comment in comments {
             let path = anchored_path(&comment)?;
-            let content = self
-                .repository
-                .file_content_at_revision(&source_revision(&comment), &path)?
-                .ok_or(BuildClipboardExportError::MissingSourceContent)?;
+            let content = self.source_content(&comment, &path)?;
 
             groups
                 .entry(path.clone())
@@ -61,6 +60,28 @@ where
             .map(|(path, sections)| format!("{path} - {head_sha}\n\n{}", sections.join("\n\n")))
             .collect::<Vec<_>>()
             .join("\n\n"))
+    }
+}
+
+impl<'a, TGitRepository> BuildClipboardExport<'a, TGitRepository>
+where
+    TGitRepository: GitRepository,
+{
+    fn source_content(
+        &self,
+        comment: &ReviewCommentDraft,
+        path: &str,
+    ) -> Result<String, BuildClipboardExportError> {
+        if comment.anchor.side == AnchorSide::Head && comment.source_head_sha == WORKTREE_REVISION {
+            return self
+                .repository
+                .file_content_at_revision(WORKTREE_REVISION, path)?
+                .ok_or(BuildClipboardExportError::MissingSourceContent);
+        }
+
+        self.repository
+            .file_content_at_revision(&source_revision(comment), path)?
+            .ok_or(BuildClipboardExportError::MissingSourceContent)
     }
 }
 

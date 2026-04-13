@@ -223,9 +223,9 @@ test('keeps head-side comments across a rename when the anchored text still maps
   try {
     await page.goto(server.url);
 
-    await addComment(page, 'feature line', 'rename-safe comment');
+    await addComment(page, 'feature line second', 'rename-safe comment');
 
-    repo.writeFile('src/renamed.rs', sourceLines('feature line'));
+    repo.writeFile('src/renamed.rs', sourceLines('feature line second'));
     repo.removeFile('src/lib.rs');
     repo.commit('rename file');
 
@@ -239,10 +239,119 @@ test('keeps head-side comments across a rename when the anchored text still maps
     await expect(page.getByTestId('file-tree').getByRole('button', { name: 'renamed.rs' })).toBeVisible();
     await page.getByTestId('file-tree').getByRole('button', { name: 'renamed.rs' }).click();
 
-    const renamedLine = page.getByTestId('diff-line').filter({ hasText: 'feature line' });
+    const renamedLine = page.getByTestId('diff-line').filter({ hasText: 'feature line second' });
     await expect(renamedLine.getByTestId('comment-marker')).toContainText('1');
     await renamedLine.click();
     await expect(page.getByTestId('comment-body')).toHaveValue('rename-safe comment');
+  } finally {
+    stopServer(server.process);
+    repo.cleanup();
+  }
+});
+
+test('refresh in commit mode preserves the selected commit and falls back when it disappears', async ({ page }) => {
+  const repo = createRepoFixture();
+  const server = await startServer(repo.path);
+  const pageErrors: string[] = [];
+
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
+  });
+
+  try {
+    await page.goto(server.url);
+    await expect(page.getByTestId('repo-path')).toContainText(repo.path);
+
+    await page.getByTestId('review-mode').selectOption('commit');
+    await expect(page.getByTestId('commit-select')).toContainText('first feature');
+    const firstCommit = page.getByTestId('commit-select').locator('option').filter({ hasText: 'first feature' });
+    await page.getByTestId('commit-select').selectOption(await firstCommit.getAttribute('value'));
+    await expect(page.getByTestId('diff-view')).toContainText('feature line first');
+    await expect(page.getByTestId('diff-view')).not.toContainText('feature line second');
+
+    repo.writeFile('scratch-a.txt', 'trigger refresh preserve\n');
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect(page.getByTestId('refresh-button')).toBeVisible();
+    await page.getByTestId('refresh-button').click();
+
+    await expect(page.getByTestId('commit-select')).toContainText('first feature');
+    await expect(page.getByTestId('commit-select')).toHaveValue(/.+/);
+    await expect(page.getByTestId('diff-view')).toContainText('feature line first');
+
+    repo.writeFile('scratch-b.txt', 'trigger refresh fallback\n');
+    repo.updateRemoteBranch('origin/main', repo.headSha());
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect(page.getByTestId('refresh-button')).toBeVisible();
+    await page.getByTestId('refresh-button').click();
+
+    await expect(page.getByTestId('commit-select')).toHaveValue('LOCAL_CHANGES');
+    await expect(page.getByTestId('empty-state')).toBeHidden();
+    await expect(page.getByTestId('diff-view')).toContainText('trigger refresh');
+  } finally {
+    expect(pageErrors).toEqual([]);
+    stopServer(server.process);
+    repo.cleanup();
+  }
+});
+
+test('refresh in commit mode preserves LOCAL CHANGES and updates the worktree diff', async ({ page }) => {
+  const repo = createRepoFixture();
+  repo.writeFile('src/lib.rs', sourceLines('local line before refresh'));
+  const server = await startServer(repo.path);
+
+  try {
+    await page.goto(server.url);
+    await expect(page.getByTestId('diff-view')).toContainText('local line before refresh');
+    await page.getByTestId('review-mode').selectOption('commit');
+
+    await expect(page.getByTestId('commit-select')).toHaveValue('LOCAL_CHANGES');
+    await expect(page.getByTestId('diff-view')).toContainText('local line before refresh');
+
+    repo.writeFile('src/lib.rs', sourceLines('local line after refresh'));
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect.poll(async () => await page.getByTestId('refresh-button').isVisible()).toBe(true);
+    await page.getByTestId('refresh-button').click();
+
+    await expect(page.getByTestId('commit-select')).toHaveValue('LOCAL_CHANGES');
+    await expect(page.getByTestId('diff-view')).toContainText('local line after refresh');
+    await expect(page.getByTestId('diff-view')).not.toContainText('local line before refresh');
+  } finally {
+    stopServer(server.process);
+    repo.cleanup();
+  }
+});
+
+test('refresh in LOCAL CHANGES remaps comments when the worktree diff changes', async ({ page }) => {
+  const repo = createRepoFixture();
+  repo.writeFile('src/lib.rs', sourceLines('local line before refresh'));
+  const server = await startServer(repo.path);
+
+  try {
+    await page.goto(server.url);
+    await expect(page.getByTestId('diff-view')).toContainText('local line before refresh');
+    await page.getByTestId('review-mode').selectOption('commit');
+
+    await expect(page.getByTestId('commit-select')).toHaveValue('LOCAL_CHANGES');
+    await addComment(page, 'local line before refresh', 'local refresh note');
+
+    repo.writeFile('src/lib.rs', sourceLines('local line after refresh'));
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await expect.poll(async () => await page.getByTestId('refresh-button').isVisible()).toBe(true);
+    await page.getByTestId('refresh-button').click();
+
+    const updatedLine = page.getByTestId('diff-line').filter({ hasText: 'local line after refresh' });
+    await expect(updatedLine.getByTestId('comment-marker')).toContainText('1');
+    await updatedLine.click();
+    await expect(page.getByTestId('comment-status')).toContainText('Changed');
   } finally {
     stopServer(server.process);
     repo.cleanup();

@@ -1,4 +1,4 @@
-use crate::domain::repo::RepoSnapshot;
+use crate::domain::repo::{RepoSnapshot, ReviewCommitSummary};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitRepositoryError {
@@ -6,6 +6,7 @@ pub enum GitRepositoryError {
     CurrentBranchUnavailable,
     RemoteBranchesUnavailable,
     InvalidBaseBranch,
+    InvalidCommit,
     ReviewDiffUnavailable,
     RepoSnapshotUnavailable,
     FileContentUnavailable,
@@ -23,7 +24,13 @@ pub trait GitRepository {
     fn head_sha(&self) -> Result<String, GitRepositoryError>;
     fn current_branch(&self) -> Result<String, GitRepositoryError>;
     fn remote_branches(&self) -> Result<Vec<String>, GitRepositoryError>;
+    fn commit_summaries(
+        &self,
+        base_branch: &str,
+    ) -> Result<Vec<ReviewCommitSummary>, GitRepositoryError>;
     fn raw_review_diff(&self, base_branch: &str) -> Result<RawReviewDiff, GitRepositoryError>;
+    fn raw_commit_diff(&self, commit_sha: &str) -> Result<RawReviewDiff, GitRepositoryError>;
+    fn raw_local_changes_diff(&self) -> Result<RawReviewDiff, GitRepositoryError>;
     fn repo_snapshot(&self) -> Result<RepoSnapshot, GitRepositoryError>;
     fn file_content_at_revision(
         &self,

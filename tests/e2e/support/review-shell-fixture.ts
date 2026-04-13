@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const CLEANUP_ATTEMPTS = 5;
+const CLEANUP_RETRY_DELAY_MS = 100;
+
 export function createRepoFixture() {
   const root = mkdtempSync(join(tmpdir(), 'git-reviewer-e2e-'));
   runGit(root, ['init', '-b', 'main']);
@@ -25,16 +28,20 @@ export function createRepoFixture() {
   runGit(root, ['update-ref', 'refs/remotes/origin/main', mainSha]);
   runGit(root, ['checkout', '-b', 'feature/shell']);
 
-  writeRepoFile(root, 'src/lib.rs', sourceLines('feature line'));
+  writeRepoFile(root, 'src/lib.rs', sourceLines('feature line first'));
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'first feature']);
+
+  writeRepoFile(root, 'src/lib.rs', sourceLines('feature line second'));
   writeRepoFile(root, 'docs/readme.md', 'changed docs\nline 2\nline 3\n');
   runGit(root, ['add', '-A']);
-  runGit(root, ['commit', '-m', 'feature']);
+  runGit(root, ['commit', '-m', 'second feature']);
 
   return {
     path: root,
     root,
     cleanup() {
-      rmSync(root, { force: true, recursive: true });
+      cleanupDir(root);
     },
     writeFile(relativePath: string, content: string) {
       writeRepoFile(root, relativePath, content);
@@ -46,6 +53,12 @@ export function createRepoFixture() {
       runGit(root, ['add', '-A']);
       runGit(root, ['commit', '-m', message]);
       return runGit(root, ['rev-parse', 'HEAD']).trim();
+    },
+    headSha() {
+      return runGit(root, ['rev-parse', 'HEAD']).trim();
+    },
+    updateRemoteBranch(name: string, target: string) {
+      runGit(root, ['update-ref', `refs/remotes/${name}`, target]);
     }
   };
 }
@@ -70,7 +83,7 @@ export function createLargeFileFixture() {
   return {
     path: root,
     cleanup() {
-      rmSync(root, { force: true, recursive: true });
+      cleanupDir(root);
     }
   };
 }
@@ -114,6 +127,27 @@ function runGit(cwd: string, args: string[]) {
     cwd,
     encoding: 'utf8'
   });
+}
+
+function cleanupDir(path: string) {
+  for (let attempt = 1; attempt <= CLEANUP_ATTEMPTS; attempt += 1) {
+    try {
+      rmSync(path, { force: true, recursive: true });
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'EBUSY' || attempt === CLEANUP_ATTEMPTS) {
+        throw error;
+      }
+      sleep(CLEANUP_RETRY_DELAY_MS);
+    }
+  }
+}
+
+function sleep(ms: number) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // Busy wait is fine here; cleanup only runs in test teardown.
+  }
 }
 
 function waitForServerUrl(process: ChildProcessWithoutNullStreams) {

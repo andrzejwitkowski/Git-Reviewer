@@ -20,11 +20,13 @@ export const moveStoredComments = (storage, fromScope, toScope, comments) => {
 
 export const activeScope = (repoContext, review) => ({
   repoPath: repoContext?.repoPath || '',
+  reviewMode: review?.reviewMode || 'branch',
   baseBranch: review?.baseBranch || '',
+  selectedCommit: review?.selectedCommit || '',
   headSha: review?.headSha || ''
 });
 
-const scopeKey = (scope) => `${scope.repoPath}::${scope.baseBranch}::${scope.headSha}`;
+const scopeKey = (scope) => `${scope.repoPath}::${scope.reviewMode}::${scope.baseBranch}::${scope.selectedCommit}::${scope.headSha}`;
 
 const readStorage = (storage) => {
   try {

@@ -15,8 +15,19 @@
         </div>
         <div class="controls">
           <label>
+            Review mode
+            <select data-testid="review-mode">
+              <option value="branch">Branch</option>
+              <option value="commit">Commit</option>
+            </select>
+          </label>
+          <label>
             Base branch
             <select data-testid="base-branch"></select>
+          </label>
+          <label data-testid="commit-select-wrapper" class="hidden">
+            Commit
+            <select data-testid="commit-select"></select>
           </label>
           <div class="toggle-group" role="group" aria-label="Diff mode">
             <button type="button" data-testid="toggle-unified">Unified</button>

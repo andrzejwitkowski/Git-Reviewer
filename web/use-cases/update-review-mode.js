@@ -3,20 +3,20 @@ import { createEmptyCommitReview } from './empty-review.js';
 import { resetTransientReviewState } from './review-state-reset.js';
 import { buildReviewRequest, selectInitialPath } from './review-request.js';
 
-export const updateReviewBase = async (port, state, storage, baseBranch) => {
+export const updateReviewMode = async (port, state, storage, reviewMode) => {
   state.isLoading = true;
   state.error = null;
   state.expandedPaths = [];
-  resetTransientReviewState(state);
   state.reviewRequestId += 1;
   const requestId = state.reviewRequestId;
-
-  let review;
+  const baseBranch = state.review?.baseBranch || state.repoContext?.defaultBaseBranch;
   let availableCommits = [];
   let selectedCommit = null;
 
+  resetTransientReviewState(state);
+
   try {
-    if (state.reviewMode === 'commit') {
+    if (reviewMode === 'commit') {
       availableCommits = await port.loadCommits(baseBranch);
       selectedCommit = availableCommits[0]?.sha || null;
       if (!selectedCommit) {
@@ -24,6 +24,7 @@ export const updateReviewBase = async (port, state, storage, baseBranch) => {
           return false;
         }
         const review = createEmptyCommitReview(baseBranch);
+        state.reviewMode = reviewMode;
         state.availableCommits = availableCommits;
         state.selectedCommit = null;
         state.review = review;
@@ -33,10 +34,24 @@ export const updateReviewBase = async (port, state, storage, baseBranch) => {
         return true;
       }
     }
-    review = await port.loadReview(buildReviewRequest({
+
+    const review = await port.loadReview(buildReviewRequest({
       ...state,
+      reviewMode,
       selectedCommit
     }, baseBranch));
+    if (requestId !== state.reviewRequestId) {
+      return false;
+    }
+
+    state.reviewMode = reviewMode;
+    state.availableCommits = availableCommits;
+    state.selectedCommit = selectedCommit;
+    state.review = review;
+    state.comments = loadStoredComments(storage, activeScope(state.repoContext, review));
+    state.selectedPath = selectInitialPath(review.files);
+    state.isLoading = false;
+    return true;
   } catch (error) {
     if (requestId !== state.reviewRequestId) {
       return false;
@@ -44,17 +59,4 @@ export const updateReviewBase = async (port, state, storage, baseBranch) => {
 
     throw error;
   }
-
-  if (requestId !== state.reviewRequestId) {
-    return false;
-  }
-
-  state.availableCommits = availableCommits;
-  state.selectedCommit = selectedCommit;
-  state.review = review;
-  state.comments = loadStoredComments(storage, activeScope(state.repoContext, review));
-  state.selectedPath = review.files.find((file) => file.path === state.selectedPath)?.path
-    ?? selectInitialPath(review.files);
-  state.isLoading = false;
-  return true;
 };

@@ -1,7 +1,7 @@
-use crate::domain::repo::{RepoContext, RepoSnapshot, RepoStatusEntry};
+use crate::domain::repo::{RepoContext, RepoSnapshot, RepoStatusEntry, ReviewCommitSummary};
 use crate::domain::review::{
     AnchorSide, CommentAnchor, DiffHunk, DiffLine, DiffLineKind, Review, ReviewCommentDraft,
-    ReviewFile,
+    ReviewFile, ReviewMode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +30,9 @@ impl RepoContextResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewResponse {
+    pub review_mode: &'static str,
     pub base_branch: String,
+    pub selected_commit: Option<String>,
     pub merge_base_sha: String,
     pub head_sha: String,
     pub files: Vec<ReviewFileResponse>,
@@ -39,7 +41,12 @@ pub struct ReviewResponse {
 impl From<Review> for ReviewResponse {
     fn from(review: Review) -> Self {
         Self {
+            review_mode: match review.review_mode {
+                ReviewMode::Branch => "branch",
+                ReviewMode::Commit => "commit",
+            },
             base_branch: review.base_branch,
+            selected_commit: review.selected_commit,
             merge_base_sha: review.merge_base_sha,
             head_sha: review.head_sha,
             files: review.files.into_iter().map(Into::into).collect(),
@@ -135,6 +142,7 @@ impl From<DiffLine> for ReviewLineResponse {
 pub struct RepoStatusResponse {
     pub head_sha: String,
     pub current_branch: String,
+    pub local_changes_sha: String,
     pub entries: Vec<RepoStatusEntryResponse>,
 }
 
@@ -143,6 +151,7 @@ impl From<RepoSnapshot> for RepoStatusResponse {
         Self {
             head_sha: snapshot.head_sha,
             current_branch: snapshot.current_branch,
+            local_changes_sha: snapshot.local_changes_sha,
             entries: snapshot.entries.into_iter().map(Into::into).collect(),
         }
     }
@@ -160,6 +169,26 @@ impl From<RepoStatusEntry> for RepoStatusEntryResponse {
         Self {
             code: entry.code,
             path: entry.path,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewCommitSummaryResponse {
+    pub sha: String,
+    pub short_sha: String,
+    pub subject: String,
+    pub is_local_changes: bool,
+}
+
+impl From<ReviewCommitSummary> for ReviewCommitSummaryResponse {
+    fn from(summary: ReviewCommitSummary) -> Self {
+        Self {
+            sha: summary.sha,
+            short_sha: summary.short_sha,
+            subject: summary.subject,
+            is_local_changes: summary.is_local_changes,
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::adapters::inbound::http::assets;
 use crate::adapters::inbound::http::dto::{
     ClipboardExportRequest, ClipboardExportResponse, ErrorResponse, RepoContextResponse,
-    RepoStatusResponse, ReviewResponse,
+    RepoStatusResponse, ReviewCommitSummaryResponse, ReviewResponse,
 };
 use crate::application::use_cases::build_clipboard_export::{
     BuildClipboardExport, BuildClipboardExportError,
@@ -10,6 +10,10 @@ use crate::application::use_cases::build_clipboard_export::{
 use crate::application::use_cases::get_repo_status::GetRepoStatus;
 use crate::application::use_cases::load_repo_context::{LoadRepoContext, LoadRepoContextError};
 use crate::application::use_cases::load_review::{LoadReview, LoadReviewError, LoadReviewRequest};
+use crate::application::use_cases::load_review_commits::{
+    LoadReviewCommits, LoadReviewCommitsError,
+};
+use crate::domain::review::ReviewMode;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
@@ -32,8 +36,15 @@ impl HttpAppState {
 
 #[derive(Deserialize)]
 pub struct ReviewQuery {
+    pub mode: Option<String>,
     pub base: Option<String>,
+    pub commit: Option<String>,
     pub expand: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CommitsQuery {
+    pub base: String,
 }
 
 pub async fn index() -> Html<&'static str> {
@@ -71,9 +82,16 @@ pub async fn review(
     State(state): State<HttpAppState>,
     Query(query): Query<ReviewQuery>,
 ) -> Result<Json<ReviewResponse>, ApiError> {
+    let review_mode = match query.mode.as_deref() {
+        Some("branch") | None => ReviewMode::Branch,
+        Some("commit") => ReviewMode::Commit,
+        Some(_) => return Err(ApiError::invalid_review_mode()),
+    };
     let review = LoadReview::new(&state.git)
         .execute(LoadReviewRequest {
+            review_mode,
             selected_base: query.base,
+            selected_commit: query.commit,
             expanded_paths: query
                 .expand
                 .map(|value| {
@@ -88,6 +106,17 @@ pub async fn review(
         .map_err(ApiError::review)?;
 
     Ok(Json(review.into()))
+}
+
+pub async fn commits(
+    State(state): State<HttpAppState>,
+    Query(query): Query<CommitsQuery>,
+) -> Result<Json<Vec<ReviewCommitSummaryResponse>>, ApiError> {
+    let commits = LoadReviewCommits::new(&state.git)
+        .execute(&query.base)
+        .map_err(ApiError::commits)?;
+
+    Ok(Json(commits.into_iter().map(Into::into).collect()))
 }
 
 pub async fn status(
@@ -120,6 +149,13 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    fn invalid_review_mode() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: "invalid review mode",
+        }
+    }
+
     fn repo_context(error: LoadRepoContextError) -> Self {
         match error {
             LoadRepoContextError::MissingRemoteBranches => Self {
@@ -139,6 +175,10 @@ impl ApiError {
                 status: StatusCode::BAD_REQUEST,
                 message: "invalid base branch",
             },
+            LoadReviewError::InvalidCommit => Self {
+                status: StatusCode::BAD_REQUEST,
+                message: "invalid commit",
+            },
             LoadReviewError::MissingRemoteBranches => Self {
                 status: StatusCode::BAD_REQUEST,
                 message: "repo has no remote branches",
@@ -146,6 +186,19 @@ impl ApiError {
             LoadReviewError::GitRepository(_) | LoadReviewError::ParseReview(_) => Self {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message: "review unavailable",
+            },
+        }
+    }
+
+    fn commits(error: LoadReviewCommitsError) -> Self {
+        match error {
+            LoadReviewCommitsError::InvalidBaseBranch => Self {
+                status: StatusCode::BAD_REQUEST,
+                message: "invalid base branch",
+            },
+            LoadReviewCommitsError::GitRepository(_) => Self {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "commit list unavailable",
             },
         }
     }
