@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Git Reviewer</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <strong>Git Reviewer</strong>
+          <span data-testid="repo-path" class="repo-path">Loading repository...</span>
+        </div>
+        <div class="controls">
+          <label>
+            Base branch
+            <select data-testid="base-branch"></select>
+          </label>
+          <div class="toggle-group" role="group" aria-label="Diff mode">
+            <button type="button" data-testid="toggle-unified">Unified</button>
+            <button type="button" data-testid="toggle-split">Split</button>
+          </div>
+          <button type="button" data-testid="refresh-button" class="hidden">Refresh</button>
+          <button type="button" data-testid="copy-button" disabled>Copy to clipboard</button>
+        </div>
+      </header>
+      <div data-testid="error-banner" class="banner hidden"></div>
+      <main class="layout">
+        <aside class="sidebar">
+          <div data-testid="loading-state" class="panel-state">Loading review...</div>
+          <div data-testid="empty-state" class="panel-state hidden">No changed files.</div>
+          <nav data-testid="file-tree" class="file-tree"></nav>
+          <section data-testid="stale-comments" class="stale-comments hidden"></section>
+        </aside>
+        <section data-testid="diff-view" class="diff-view" data-mode="unified"></section>
+      </main>
+      <div data-testid="comment-modal" class="modal hidden">
+        <div class="modal-card">
+          <strong data-testid="comment-path"></strong>
+          <span data-testid="comment-status" class="comment-status"></span>
+          <textarea data-testid="comment-body" rows="6"></textarea>
+          <div class="modal-actions">
+            <button type="button" data-testid="comment-save">Save comment</button>
+            <button type="button" data-testid="comment-delete">Delete comment</button>
+            <button type="button" data-testid="comment-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div data-testid="clipboard-fallback-modal" class="modal hidden">
+        <div class="modal-card">
+          <textarea data-testid="clipboard-fallback-text" rows="10"></textarea>
+          <div class="modal-actions">
+            <button type="button" data-testid="clipboard-fallback-close">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

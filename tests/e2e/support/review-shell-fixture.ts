@@ -1,0 +1,150 @@
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export function createRepoFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'git-reviewer-e2e-'));
+  runGit(root, ['init', '-b', 'main']);
+  runGit(root, ['config', 'user.name', 'Git Reviewer']);
+  runGit(root, ['config', 'user.email', 'git-reviewer@example.com']);
+
+  writeRepoFile(root, 'src/lib.rs', sourceLines('base value'));
+  writeRepoFile(root, 'docs/readme.md', 'base docs\nline 2\nline 3\n');
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'base']);
+  const baseSha = runGit(root, ['rev-parse', 'HEAD']).trim();
+
+  runGit(root, ['update-ref', 'refs/remotes/origin/release', baseSha]);
+  writeRepoFile(root, 'docs/readme.md', 'main baseline\nline 2\nline 3\n');
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'main baseline']);
+  const mainSha = runGit(root, ['rev-parse', 'HEAD']).trim();
+
+  runGit(root, ['update-ref', 'refs/remotes/origin/main', mainSha]);
+  runGit(root, ['checkout', '-b', 'feature/shell']);
+
+  writeRepoFile(root, 'src/lib.rs', sourceLines('feature line'));
+  writeRepoFile(root, 'docs/readme.md', 'changed docs\nline 2\nline 3\n');
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'feature']);
+
+  return {
+    path: root,
+    root,
+    cleanup() {
+      rmSync(root, { force: true, recursive: true });
+    },
+    writeFile(relativePath: string, content: string) {
+      writeRepoFile(root, relativePath, content);
+    },
+    removeFile(relativePath: string) {
+      rmSync(join(root, relativePath), { force: true });
+    },
+    commit(message: string) {
+      runGit(root, ['add', '-A']);
+      runGit(root, ['commit', '-m', message]);
+      return runGit(root, ['rev-parse', 'HEAD']).trim();
+    }
+  };
+}
+
+export function createLargeFileFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'git-reviewer-large-'));
+  runGit(root, ['init', '-b', 'main']);
+  runGit(root, ['config', 'user.name', 'Git Reviewer']);
+  runGit(root, ['config', 'user.email', 'git-reviewer@example.com']);
+
+  writeRepoFile(root, 'src/huge.ts', numberedLines(820, 'base marker'));
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'base']);
+  const baseSha = runGit(root, ['rev-parse', 'HEAD']).trim();
+
+  runGit(root, ['update-ref', 'refs/remotes/origin/main', baseSha]);
+  runGit(root, ['checkout', '-b', 'feature/large']);
+  writeRepoFile(root, 'src/huge.ts', numberedLines(820, 'updated marker'));
+  runGit(root, ['add', '-A']);
+  runGit(root, ['commit', '-m', 'feature']);
+
+  return {
+    path: root,
+    cleanup() {
+      rmSync(root, { force: true, recursive: true });
+    }
+  };
+}
+
+export async function startServer(repoPath: string) {
+  const process = spawn('cargo', ['run', '--quiet', '--', repoPath, '--port', '0'], {
+    cwd: processCwd(),
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  const url = await waitForServerUrl(process);
+  return { process, url };
+}
+
+export function stopServer(process: ChildProcessWithoutNullStreams) {
+  if (!process.killed) {
+    process.kill('SIGTERM');
+  }
+}
+
+export function sourceLines(target: string) {
+  const lines = Array.from({ length: 25 }, (_, index) => `line ${index + 1}`);
+  lines[11] = target;
+  return `${lines.join('\n')}\n`;
+}
+
+function numberedLines(total: number, marker: string) {
+  const lines = Array.from({ length: total }, (_, index) => `line ${index + 1}`);
+  lines[410] = marker;
+  return `${lines.join('\n')}\n`;
+}
+
+function writeRepoFile(root: string, relativePath: string, content: string) {
+  const filePath = join(root, relativePath);
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, content);
+}
+
+function runGit(cwd: string, args: string[]) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8'
+  });
+}
+
+function waitForServerUrl(process: ChildProcessWithoutNullStreams) {
+  return new Promise<string>((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out waiting for server URL.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    }, 30000);
+
+    process.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      const match = stdout.match(/http:\/\/127\.0\.0\.1:\d+/);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[0]);
+      }
+    });
+
+    process.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    process.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`Server exited early with code ${code}.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    });
+  });
+}
+
+function processCwd() {
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+}
