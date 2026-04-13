@@ -3,4 +3,6 @@
 /playwright-report
 /test-results
 /.agents
+/.worktrees
+/dist
 .DS_Store
