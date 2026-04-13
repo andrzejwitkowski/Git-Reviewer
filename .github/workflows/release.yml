@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release tag to recover and republish assets for
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ensure_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.resolve_release.outputs.release_tag }}
+      release_version: ${{ steps.resolve_release.outputs.release_version }}
+    steps:
+      - name: Resolve release metadata
+        id: resolve_release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PUSH_TAG_REF: ${{ github.ref_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            release_tag=$PUSH_TAG_REF
+          else
+            release_tag=$DISPATCH_VERSION
+          fi
+
+          if [ -z "$release_tag" ]; then
+            echo 'Resolved release tag is empty' >&2
+            exit 1
+          fi
+
+          case $release_tag in
+            *$'\n'*|*$'\r'*)
+              echo 'Release tag must be a single line' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$EVENT_NAME" != "push" ]; then
+            if [[ ! "$release_tag" =~ ^v.+$ ]]; then
+              echo 'Release tag must match the v* release policy' >&2
+              exit 1
+            fi
+
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$release_tag" | jq -e --arg tag "$release_tag" '.[] | select(.ref == ("refs/tags/" + $tag))' >/dev/null; then
+              echo "Release tag '$release_tag' does not exist in the repository" >&2
+              exit 1
+            fi
+          fi
+
+          safe_version=$(printf '%s' "$release_tag" | tr -cs 'A-Za-z0-9._-' '-')
+          safe_version=${safe_version#-}
+          safe_version=${safe_version%-}
+
+          if [ -z "$safe_version" ]; then
+            echo 'Resolved version is empty after sanitization' >&2
+            exit 1
+          fi
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$safe_version" >> "$GITHUB_OUTPUT"
+
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.resolve_release.outputs.release_tag }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          if gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1
+
+  release:
+    needs: ensure_release
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            rust_target: aarch64-apple-darwin
+            binary_name: git-reviewer
+            asset_name_pattern: git-reviewer-__VERSION__-darwin-arm64.zip
+            archive_format: zip
+          - runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+            binary_name: git-reviewer
+            asset_name_pattern: git-reviewer-__VERSION__-linux-x86_64.tar.gz
+            archive_format: tar.gz
+          - runner: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            binary_name: git-reviewer.exe
+            asset_name_pattern: git-reviewer-__VERSION__-windows-x86_64.zip
+            archive_format: zip
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.ensure_release.outputs.release_tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.rust_target }}
+
+      - name: Package archive on Unix
+        if: runner.os != 'Windows'
+        env:
+          ASSET_NAME_PATTERN: ${{ matrix.asset_name_pattern }}
+          RELEASE_VERSION: ${{ needs.ensure_release.outputs.release_version }}
+        shell: bash
+        run: |
+          asset_name=$ASSET_NAME_PATTERN
+          asset_name=${asset_name/__VERSION__/$RELEASE_VERSION}
+
+          mkdir -p dist/package
+          cp "target/${{ matrix.rust_target }}/release/${{ matrix.binary_name }}" dist/package/
+
+          if [ "${{ matrix.archive_format }}" = "zip" ]; then
+            (
+              cd dist/package
+              zip -r "../$asset_name" "${{ matrix.binary_name }}"
+            )
+          else
+            tar -C dist/package -czf "dist/$asset_name" "${{ matrix.binary_name }}"
+          fi
+
+      - name: Package archive on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $assetName = "${{ matrix.asset_name_pattern }}".Replace('__VERSION__', '${{ needs.ensure_release.outputs.release_version }}')
+          New-Item -ItemType Directory -Force -Path dist/package | Out-Null
+          Copy-Item "target/${{ matrix.rust_target }}/release/${{ matrix.binary_name }}" "dist/package/${{ matrix.binary_name }}"
+          Compress-Archive -Path "dist/package/${{ matrix.binary_name }}" -DestinationPath "dist/$assetName" -Force
+
+      - name: Resolve packaged asset path
+        id: packaged_asset
+        env:
+          ASSET_NAME_PATTERN: ${{ matrix.asset_name_pattern }}
+          RELEASE_VERSION: ${{ needs.ensure_release.outputs.release_version }}
+        shell: bash
+        run: |
+          asset_name=$ASSET_NAME_PATTERN
+          asset_name=${asset_name/__VERSION__/$RELEASE_VERSION}
+          echo "asset_path=dist/$asset_name" >> "$GITHUB_OUTPUT"
+
+      - name: Show packaged artifact
+        shell: bash
+        run: ls -l dist
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.ensure_release.outputs.release_tag }}
+          ASSET_PATH: ${{ steps.packaged_asset.outputs.asset_path }}
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" "$ASSET_PATH" --clobber

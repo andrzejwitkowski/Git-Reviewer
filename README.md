@@ -55,6 +55,10 @@ The app prints a local URL such as `http://127.0.0.1:4000` or an ephemeral port 
 - A local Git worktree with at least one remote branch
 - Node.js only for Playwright tests, not for runtime
 
+## Releases
+
+Push a `v*` tag such as `v0.1.0` to run the release workflow and publish native archives. If a release needs recovery, rerun the `Release` workflow with `workflow_dispatch` and pass an existing pushed tag so CI republishes assets for that tag instead of minting a new release path. CI is expected to upload assets for macOS arm64, Linux x86_64, and Windows x86_64.
+
 ## Review Export Format
 
 `Copy to clipboard` exports all comments grouped by file and current `HEAD` sha.
