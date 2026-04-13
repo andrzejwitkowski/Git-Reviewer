@@ -1,6 +1,6 @@
 import { commentIndex, staleComments } from '../core/review-comments.js';
 import { escapeHtml } from '../core/file-tree.js';
-import { renderBranches, renderTree } from './dom-renderer-helpers.js';
+import { renderBranches, renderCommitSelect, renderReviewMode, renderTree } from './dom-renderer-helpers.js';
 
 export const createShellRenderer = (documentRef, hooks) => {
   const nodes = selectNodes(documentRef);
@@ -11,7 +11,9 @@ export const createShellRenderer = (documentRef, hooks) => {
       nodes.repoPath.textContent = state.repoContext?.repoPath || 'Loading repository...';
       nodes.errorBanner.textContent = state.error || '';
       nodes.errorBanner.classList.toggle('hidden', !state.error);
+      renderReviewMode(nodes.reviewMode, state);
       renderBranches(nodes.baseBranch, state.repoContext, state.review);
+      renderCommitSelect(nodes.commitSelectWrapper, nodes.commitSelect, state);
       renderTree(nodes.fileTree, state, hooks);
       renderRefresh(nodes.refreshButton, state.pendingRefresh);
       renderCopyButton(nodes.copyButton, state.comments.length > 0, state.clipboardCopied);
@@ -28,7 +30,10 @@ export const createShellRenderer = (documentRef, hooks) => {
 
 const selectNodes = (documentRef) => ({
   repoPath: documentRef.querySelector('[data-testid="repo-path"]'),
+  reviewMode: documentRef.querySelector('[data-testid="review-mode"]'),
   baseBranch: documentRef.querySelector('[data-testid="base-branch"]'),
+  commitSelectWrapper: documentRef.querySelector('[data-testid="commit-select-wrapper"]'),
+  commitSelect: documentRef.querySelector('[data-testid="commit-select"]'),
   fileTree: documentRef.querySelector('[data-testid="file-tree"]'),
   diffView: documentRef.querySelector('[data-testid="diff-view"]'),
   loadingState: documentRef.querySelector('[data-testid="loading-state"]'),
@@ -44,7 +49,9 @@ const selectNodes = (documentRef) => ({
 });
 
 const bindStaticEvents = (nodes, hooks) => {
+  nodes.reviewMode.addEventListener('change', () => hooks.onReviewModeChange(nodes.reviewMode.value));
   nodes.baseBranch.addEventListener('change', () => hooks.onBaseBranchChange(nodes.baseBranch.value));
+  nodes.commitSelect.addEventListener('change', () => hooks.onCommitChange(nodes.commitSelect.value));
   nodes.unifiedButton.addEventListener('click', () => hooks.onDiffModeChange('unified'));
   nodes.splitButton.addEventListener('click', () => hooks.onDiffModeChange('split'));
   nodes.copyButton.addEventListener('click', () => hooks.onCopyToClipboard());

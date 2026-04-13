@@ -1,5 +1,5 @@
 use crate::application::ports::git_repository::{GitRepository, GitRepositoryError, RawReviewDiff};
-use crate::domain::repo::{RepoSnapshot, RepoStatusEntry};
+use crate::domain::repo::{RepoSnapshot, RepoStatusEntry, ReviewCommitSummary};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -29,13 +29,23 @@ impl GitCliRepository {
         args: &[&str],
         error: GitRepositoryError,
     ) -> Result<String, GitRepositoryError> {
+        self.run_raw_with_allowed_statuses(args, &[0], error)
+    }
+
+    fn run_raw_with_allowed_statuses(
+        &self,
+        args: &[&str],
+        allowed_statuses: &[i32],
+        error: GitRepositoryError,
+    ) -> Result<String, GitRepositoryError> {
         let output = Command::new("git")
             .args(args)
             .current_dir(&self.repo_path)
             .output()
             .map_err(|_| error.clone())?;
 
-        if !output.status.success() {
+        let status = output.status.code().unwrap_or_default();
+        if !allowed_statuses.contains(&status) {
             return Err(error);
         }
 
@@ -71,6 +81,31 @@ impl GitRepository for GitCliRepository {
             .collect())
     }
 
+    fn commit_summaries(
+        &self,
+        base_branch: &str,
+    ) -> Result<Vec<ReviewCommitSummary>, GitRepositoryError> {
+        let output = self
+            .run_trimmed(
+                &[
+                    "log",
+                    "--format=%H%x09%h%x09%s",
+                    &format!("{base_branch}..HEAD"),
+                ],
+                GitRepositoryError::ReviewDiffUnavailable,
+            )
+            .map_err(|error| match error {
+                GitRepositoryError::ReviewDiffUnavailable => GitRepositoryError::InvalidBaseBranch,
+                other => other,
+            })?;
+
+        Ok(output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(parse_commit_summary)
+            .collect())
+    }
+
     fn raw_review_diff(&self, base_branch: &str) -> Result<RawReviewDiff, GitRepositoryError> {
         let merge_base = self
             .run_trimmed(
@@ -102,6 +137,91 @@ impl GitRepository for GitCliRepository {
         })
     }
 
+    fn raw_commit_diff(&self, commit_sha: &str) -> Result<RawReviewDiff, GitRepositoryError> {
+        let commit = self
+            .run_trimmed(
+                &["rev-parse", commit_sha],
+                GitRepositoryError::ReviewDiffUnavailable,
+            )
+            .map_err(|error| match error {
+                GitRepositoryError::ReviewDiffUnavailable => GitRepositoryError::InvalidCommit,
+                other => other,
+            })?;
+        let parent = self
+            .run_trimmed(
+                &["rev-parse", &format!("{commit}^")],
+                GitRepositoryError::ReviewDiffUnavailable,
+            )
+            .map_err(|error| match error {
+                GitRepositoryError::ReviewDiffUnavailable => GitRepositoryError::InvalidCommit,
+                other => other,
+            })?;
+        let diff = self.run_raw(
+            &[
+                "diff",
+                "--find-renames",
+                "--binary",
+                "--no-color",
+                &parent,
+                &commit,
+                "--",
+            ],
+            GitRepositoryError::ReviewDiffUnavailable,
+        )?;
+
+        Ok(RawReviewDiff {
+            base_branch: "commit".to_string(),
+            merge_base_sha: parent,
+            head_sha: commit,
+            diff,
+        })
+    }
+
+    fn raw_local_changes_diff(&self) -> Result<RawReviewDiff, GitRepositoryError> {
+        let head_sha = self.head_sha()?;
+        let tracked_diff = self.run_raw(
+            &[
+                "diff",
+                "--find-renames",
+                "--binary",
+                "--no-color",
+                "HEAD",
+                "--",
+            ],
+            GitRepositoryError::ReviewDiffUnavailable,
+        )?;
+        let untracked = self.run_trimmed(
+            &["ls-files", "--others", "--exclude-standard"],
+            GitRepositoryError::ReviewDiffUnavailable,
+        )?;
+        let mut diff = tracked_diff;
+
+        for path in untracked.lines().filter(|line| !line.is_empty()) {
+            let file_diff = self.run_raw_with_allowed_statuses(
+                &[
+                    "diff",
+                    "--find-renames",
+                    "--binary",
+                    "--no-color",
+                    "--no-index",
+                    "--",
+                    "NUL",
+                    path,
+                ],
+                &[1],
+                GitRepositoryError::ReviewDiffUnavailable,
+            )?;
+            diff.push_str(&normalize_untracked_diff(&file_diff, path));
+        }
+
+        Ok(RawReviewDiff {
+            base_branch: "local".to_string(),
+            merge_base_sha: head_sha.clone(),
+            head_sha,
+            diff,
+        })
+    }
+
     fn repo_snapshot(&self) -> Result<RepoSnapshot, GitRepositoryError> {
         let head_sha = self.head_sha()?;
         let current_branch = self.current_branch()?;
@@ -114,8 +234,14 @@ impl GitRepository for GitCliRepository {
             .filter(|line| !line.is_empty())
             .map(parse_status_line)
             .collect();
+        let local_changes_sha = self.raw_local_changes_diff()?.diff;
 
-        Ok(RepoSnapshot::new(head_sha, current_branch, entries))
+        Ok(RepoSnapshot::new(
+            head_sha,
+            current_branch,
+            local_changes_sha,
+            entries,
+        ))
     }
 
     fn file_content_at_revision(
@@ -123,6 +249,18 @@ impl GitRepository for GitCliRepository {
         revision: &str,
         path: &str,
     ) -> Result<Option<String>, GitRepositoryError> {
+        if revision == "WORKTREE" {
+            return std::fs::read_to_string(self.repo_path.join(path))
+                .map(Some)
+                .or_else(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        Ok(None)
+                    } else {
+                        Err(GitRepositoryError::FileContentUnavailable)
+                    }
+                });
+        }
+
         let exists = self.run_trimmed(
             &["ls-tree", "-r", "--name-only", revision, "--", path],
             GitRepositoryError::FileContentUnavailable,
@@ -145,6 +283,22 @@ fn parse_status_line(line: &str) -> RepoStatusEntry {
         code: line[0..2].to_string(),
         path: decode_status_path(&line[3..]),
     }
+}
+
+fn parse_commit_summary(line: &str) -> ReviewCommitSummary {
+    let mut parts = line.splitn(3, '\t');
+
+    ReviewCommitSummary {
+        sha: parts.next().unwrap_or_default().to_string(),
+        short_sha: parts.next().unwrap_or_default().to_string(),
+        subject: parts.next().unwrap_or_default().to_string(),
+        is_local_changes: false,
+    }
+}
+
+fn normalize_untracked_diff(diff: &str, path: &str) -> String {
+    diff.replace("a/NUL", "a/dev/null")
+        .replace("b/NUL", &format!("b/{path}"))
 }
 
 fn decode_status_path(path: &str) -> String {

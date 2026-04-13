@@ -1,9 +1,17 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Review {
+    pub review_mode: ReviewMode,
     pub base_branch: String,
+    pub selected_commit: Option<String>,
     pub merge_base_sha: String,
     pub head_sha: String,
     pub files: Vec<ReviewFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewMode {
+    Branch,
+    Commit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

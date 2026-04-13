@@ -148,3 +148,85 @@ test('keeps changed inline thread status visible in the compact header when coll
     repo.cleanup();
   }
 });
+
+test('scopes comments separately for branch review and each selected commit', async ({ page }) => {
+  const repo = createRepoFixture();
+  const server = await startServer(repo.path);
+
+  try {
+    await page.goto(server.url);
+
+    await addComment(page, 'feature line second', 'branch note');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line second' }).getByTestId('comment-marker')).toContainText('1');
+
+    await page.getByTestId('review-mode').selectOption('commit');
+    const secondCommit = page.getByTestId('commit-select').locator('option').filter({ hasText: 'second feature' });
+    await page.getByTestId('commit-select').selectOption(await secondCommit.getAttribute('value'));
+    await expect(page.getByTestId('diff-view')).toContainText('feature line second');
+    await expect(page.getByTestId('diff-view').getByTestId('comment-marker')).toHaveCount(0);
+
+    await addComment(page, 'feature line second', 'commit note second');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line second' }).getByTestId('comment-marker')).toContainText('1');
+
+    const firstCommit = page.getByTestId('commit-select').locator('option').filter({ hasText: 'first feature' });
+    await page.getByTestId('commit-select').selectOption(await firstCommit.getAttribute('value'));
+    await expect(page.getByTestId('diff-view').getByTestId('comment-marker')).toHaveCount(0);
+
+    await addComment(page, 'feature line first', 'commit note first');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line first' }).getByTestId('comment-marker')).toContainText('1');
+
+    await page.getByTestId('commit-select').selectOption(await secondCommit.getAttribute('value'));
+    await expect(page.getByTestId('diff-view')).toContainText('feature line second');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line second' }).getByTestId('comment-marker')).toContainText('1');
+    await expect(page.getByTestId('diff-view')).not.toContainText('commit note first');
+
+    await page.getByTestId('review-mode').selectOption('branch');
+    await expect(page.getByTestId('file-tree')).toContainText('readme.md');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line second' }).getByTestId('comment-marker')).toContainText('1');
+    await expect(page.getByTestId('inline-comment').filter({ hasText: 'branch note' })).toBeVisible();
+    await expect(page.getByTestId('inline-comment').filter({ hasText: 'commit note second' })).toHaveCount(0);
+  } finally {
+    stopServer(server.process);
+    repo.cleanup();
+  }
+});
+
+test('scopes comments separately for LOCAL CHANGES and historical commits', async ({ page }) => {
+  const repo = createRepoFixture();
+  repo.writeFile('src/lib.rs', sourceLines('local worktree line'));
+  const server = await startServer(repo.path);
+
+  try {
+    await page.goto(server.url);
+    await expect(page.getByTestId('diff-view')).toContainText('local worktree line');
+
+    await page.getByTestId('review-mode').selectOption('commit');
+    await expect(page.getByTestId('commit-select')).toHaveValue('LOCAL_CHANGES');
+
+    await addComment(page, 'local worktree line', 'local changes note');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'local worktree line' }).getByTestId('comment-marker')).toContainText('1');
+
+    const secondCommit = page.getByTestId('commit-select').locator('option').filter({ hasText: 'second feature' });
+    await page.getByTestId('commit-select').selectOption(await secondCommit.getAttribute('value'));
+    await expect(page.getByTestId('diff-view')).toContainText('feature line second');
+    await expect(page.getByTestId('diff-view').getByTestId('comment-marker')).toHaveCount(0);
+
+    await addComment(page, 'feature line second', 'historical commit note');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'feature line second' }).getByTestId('comment-marker')).toContainText('1');
+
+    await page.getByTestId('commit-select').selectOption('LOCAL_CHANGES');
+    await expect(page.getByTestId('diff-view')).toContainText('local worktree line');
+    await expect(page.getByTestId('diff-line').filter({ hasText: 'local worktree line' }).getByTestId('comment-marker')).toContainText('1');
+    await expect(page.getByTestId('diff-view')).not.toContainText('historical commit note');
+  } finally {
+    stopServer(server.process);
+    repo.cleanup();
+  }
+});
+
+async function addComment(page: import('@playwright/test').Page, lineText: string, body: string) {
+  const line = page.getByTestId('diff-line').filter({ hasText: lineText });
+  await line.click();
+  await page.getByTestId('comment-body').fill(body);
+  await page.getByRole('button', { name: 'Save comment' }).click();
+}

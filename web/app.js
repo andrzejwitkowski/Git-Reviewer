@@ -4,6 +4,9 @@ import { buildLineCatalog, commentIndex, createCommentDraft } from './core/revie
 import { loadShell } from './use-cases/load-shell.js';
 import { reloadShell } from './use-cases/reload-shell.js';
 import { updateReviewBase } from './use-cases/update-review-base.js';
+import { updateReviewMode } from './use-cases/update-review-mode.js';
+import { updateReviewCommit } from './use-cases/update-review-commit.js';
+import { buildReviewRequest } from './use-cases/review-request.js';
 import { exportComments } from './use-cases/export-comments.js';
 import { watchRefresh } from './use-cases/watch-refresh.js';
 import { createHttpReviewPort } from './adapters/http-review-port.js';
@@ -19,6 +22,30 @@ const bootstrap = async () => {
     onBaseBranchChange: async (branch) => {
       try {
         const applied = await updateReviewBase(port, state, storage, branch);
+        if (!applied) {
+          return;
+        }
+      } catch (error) {
+        state.error = error.message;
+        state.isLoading = false;
+      }
+      renderShell();
+    },
+    onReviewModeChange: async (reviewMode) => {
+      try {
+        const applied = await updateReviewMode(port, state, storage, reviewMode);
+        if (!applied) {
+          return;
+        }
+      } catch (error) {
+        state.error = error.message;
+        state.isLoading = false;
+      }
+      renderShell();
+    },
+    onCommitChange: async (commitSha) => {
+      try {
+        const applied = await updateReviewCommit(port, state, storage, commitSha);
         if (!applied) {
           return;
         }
@@ -45,7 +72,7 @@ const bootstrap = async () => {
       state.isLoading = true;
       renderShell();
       try {
-        const review = await port.loadReview(state.review?.baseBranch, state.expandedPaths);
+        const review = await port.loadReview(buildReviewRequest(state, state.review?.baseBranch));
         state.review = review;
         state.selectedPath = path;
         state.isLoading = false;

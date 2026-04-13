@@ -4,10 +4,22 @@ export const createHttpReviewPort = () => ({
   async loadRepoContext() {
     return requestJson('/api/repo-context');
   },
-  async loadReview(base, expandedPaths = []) {
-    return requestJson(withQuery('/api/review', [
+  async loadCommits(base) {
+    return requestJson(withQuery('/api/commits', [
+      ['base', base]
+    ]));
+  },
+  async loadReview({ mode = 'branch', base, commit = null, expandedPaths = [] }) {
+    const entries = [
       ['base', base],
       ['expand', expandedPaths]
+    ];
+    if (mode === 'commit') {
+      entries.unshift(['commit', commit]);
+      entries.unshift(['mode', mode]);
+    }
+    return requestJson(withQuery('/api/review', [
+      ...entries
     ]));
   },
   async loadRepoStatus() {

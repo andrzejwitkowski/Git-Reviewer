@@ -9,6 +9,27 @@ export const renderBranches = (select, repoContext, review) => {
   select.value = selected;
 };
 
+export const renderReviewMode = (select, state) => {
+  select.value = state.reviewMode || 'branch';
+};
+
+export const renderCommitSelect = (wrapper, select, state) => {
+  const commits = state.availableCommits || [];
+  wrapper.classList.toggle('hidden', state.reviewMode !== 'commit');
+  select.innerHTML = commits
+    .map((commit) => `<option value="${escapeHtml(commit.sha)}">${escapeHtml(commitLabel(commit))}</option>`)
+    .join('');
+  select.value = state.selectedCommit || commits[0]?.sha || '';
+};
+
+const commitLabel = (commit) => {
+  if (commit.isLocalChanges) {
+    return commit.subject;
+  }
+
+  return `${commit.shortSha} ${commit.subject}`;
+};
+
 export const renderTree = (node, state, hooks) => {
   const files = state.review?.files || [];
   node.innerHTML = '';

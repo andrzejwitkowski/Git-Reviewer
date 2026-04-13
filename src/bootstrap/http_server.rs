@@ -15,6 +15,7 @@ pub fn build_app(repo_path: &Path) -> Router {
         .route("/", get(handlers::index))
         .route("/assets/{*path}", get(handlers::asset))
         .route("/api/repo-context", get(handlers::repo_context))
+        .route("/api/commits", get(handlers::commits))
         .route("/api/review", get(handlers::review))
         .route("/api/status", get(handlers::status))
         .route("/api/clipboard-export", post(handlers::clipboard_export))

@@ -4,7 +4,7 @@ use git_reviewer::application::ports::git_repository::{
 use git_reviewer::application::use_cases::load_repo_context::{
     LoadRepoContext, LoadRepoContextError,
 };
-use git_reviewer::domain::repo::RepoSnapshot;
+use git_reviewer::domain::repo::{RepoSnapshot, ReviewCommitSummary};
 
 #[test]
 fn prefers_origin_main_as_default_base_branch() {
@@ -126,7 +126,22 @@ impl GitRepository for StubGitRepository {
         Ok(self.remote_branches.clone())
     }
 
+    fn commit_summaries(
+        &self,
+        _base_branch: &str,
+    ) -> Result<Vec<ReviewCommitSummary>, GitRepositoryError> {
+        Err(GitRepositoryError::ReviewDiffUnavailable)
+    }
+
     fn raw_review_diff(&self, _base_branch: &str) -> Result<RawReviewDiff, GitRepositoryError> {
+        Err(GitRepositoryError::ReviewDiffUnavailable)
+    }
+
+    fn raw_commit_diff(&self, _commit_sha: &str) -> Result<RawReviewDiff, GitRepositoryError> {
+        Err(GitRepositoryError::ReviewDiffUnavailable)
+    }
+
+    fn raw_local_changes_diff(&self) -> Result<RawReviewDiff, GitRepositoryError> {
         Err(GitRepositoryError::ReviewDiffUnavailable)
     }
 

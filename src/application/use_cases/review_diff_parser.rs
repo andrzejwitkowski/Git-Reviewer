@@ -1,5 +1,7 @@
 use crate::application::ports::git_repository::RawReviewDiff;
-use crate::domain::review::{DiffChange, DiffHunk, DiffLine, DiffLineKind, Review, ReviewFile};
+use crate::domain::review::{
+    DiffChange, DiffHunk, DiffLine, DiffLineKind, Review, ReviewFile, ReviewMode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseReviewError {
@@ -14,7 +16,9 @@ pub fn parse_review(raw: RawReviewDiff) -> Result<Review, ParseReviewError> {
     }
 
     Ok(Review {
+        review_mode: ReviewMode::Branch,
         base_branch: raw.base_branch,
+        selected_commit: None,
         merge_base_sha: raw.merge_base_sha,
         head_sha: raw.head_sha,
         files: parser.finish(),
@@ -353,6 +357,22 @@ fn parse_range(range: &str) -> Result<(usize, usize), ParseReviewError> {
 mod tests {
     use super::parse_review;
     use crate::application::ports::git_repository::RawReviewDiff;
+    use crate::domain::review::ReviewMode;
+
+    #[test]
+    fn parses_branch_review_metadata() {
+        let review = parse_review(RawReviewDiff {
+            base_branch: "origin/main".to_string(),
+            merge_base_sha: "base".to_string(),
+            head_sha: "head".to_string(),
+            diff: String::new(),
+        })
+        .expect("review should parse");
+
+        assert_eq!(review.review_mode, ReviewMode::Branch);
+        assert_eq!(review.base_branch, "origin/main");
+        assert_eq!(review.selected_commit, None);
+    }
 
     #[test]
     fn parses_quoted_diff_paths_and_patch_lines_with_trailing_tabs() {

@@ -45,6 +45,8 @@ async fn returns_repo_context_review_and_status_from_http_api() {
 
     let review = read_json(&app, "/api/review?base=origin/main").await;
     assert_eq!(review["baseBranch"], "origin/main");
+    assert_eq!(review["reviewMode"], "branch");
+    assert_eq!(review["selectedCommit"], Value::Null);
     assert_eq!(review["files"].as_array().map(Vec::len), Some(2));
     assert_eq!(review["files"][0]["path"], "notes/guide.md");
     assert_eq!(review["files"][1]["path"], "src/lib.rs");
@@ -57,6 +59,7 @@ async fn returns_repo_context_review_and_status_from_http_api() {
     let status = read_json(&app, "/api/status").await;
     assert_eq!(status["currentBranch"], "feature/http-shell");
     assert_eq!(status["headSha"], repo.head_sha());
+    assert!(status["localChangesSha"].as_str().is_some());
     assert!(status["entries"]
         .as_array()
         .expect("status entries should be an array")
@@ -113,6 +116,135 @@ async fn returns_error_payload_for_unknown_base_branch() {
         .oneshot(
             Request::builder()
                 .uri("/api/review?base=origin/missing")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let error: Value = serde_json::from_slice(&body).expect("error should be valid json");
+
+    assert_eq!(error["error"], "invalid base branch");
+}
+
+#[tokio::test]
+async fn returns_commits_for_selected_base_branch() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+
+    let commits = read_json(&app, "/api/commits?base=origin/main").await;
+
+    assert_eq!(commits.as_array().map(Vec::len), Some(2));
+    assert_eq!(commits[0]["subject"], "LOCAL CHANGES");
+    assert_eq!(commits[0]["shortSha"], "");
+    assert_eq!(commits[1]["subject"], "head");
+    assert_eq!(commits[1]["shortSha"].as_str().map(str::len), Some(7));
+}
+
+#[tokio::test]
+async fn returns_single_commit_review_from_http_api() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+    let commits = read_json(&app, "/api/commits?base=origin/main").await;
+    let selected_commit = commits[1]["sha"].as_str().expect("commit sha should exist");
+
+    let review = read_json(
+        &app,
+        &format!("/api/review?mode=commit&base=origin/main&commit={selected_commit}"),
+    )
+    .await;
+
+    assert_eq!(review["reviewMode"], "commit");
+    assert_eq!(review["baseBranch"], "origin/main");
+    assert_eq!(review["selectedCommit"], selected_commit);
+    assert_eq!(review["headSha"], selected_commit);
+}
+
+#[tokio::test]
+async fn returns_local_changes_review_from_http_api() {
+    let repo = sample_repo();
+    repo.write_file("src/lib.rs", "base\nupdated in worktree\n");
+    let app = build_app(repo.path());
+
+    let review = read_json(
+        &app,
+        "/api/review?mode=commit&base=origin/main&commit=LOCAL_CHANGES",
+    )
+    .await;
+
+    assert_eq!(review["reviewMode"], "commit");
+    assert_eq!(review["selectedCommit"], "LOCAL_CHANGES");
+    assert!(review["files"]
+        .as_array()
+        .expect("files should be an array")
+        .iter()
+        .any(|file| file["path"] == "src/lib.rs"));
+}
+
+#[tokio::test]
+async fn returns_error_payload_for_unknown_commit_review() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/review?mode=commit&base=origin/main&commit=deadbeef")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let error: Value = serde_json::from_slice(&body).expect("error should be valid json");
+
+    assert_eq!(error["error"], "invalid commit");
+}
+
+#[tokio::test]
+async fn returns_error_payload_for_invalid_review_mode() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/review?mode=bogus&base=origin/main")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let error: Value = serde_json::from_slice(&body).expect("error should be valid json");
+
+    assert_eq!(error["error"], "invalid review mode");
+}
+
+#[tokio::test]
+async fn returns_error_payload_for_unknown_base_branch_commit_list() {
+    let repo = sample_repo();
+    let app = build_app(repo.path());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/commits?base=origin/missing")
                 .body(Body::empty())
                 .unwrap(),
         )

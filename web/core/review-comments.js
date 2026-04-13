@@ -1,4 +1,5 @@
 const lineKey = (path, side, lineNumber) => `${path}::${side}::${lineNumber}`;
+const LOCAL_CHANGES_REVISION = 'WORKTREE';
 
 export const buildLineCatalog = (review) => {
   const byKey = new Map();
@@ -29,7 +30,7 @@ export const createCommentDraft = (review, lineRecord, body, existingId) => ({
   id: existingId || crypto.randomUUID(),
   body,
   status: 'active',
-  sourceHeadSha: review.headSha,
+  sourceHeadSha: review.selectedCommit === 'LOCAL_CHANGES' ? LOCAL_CHANGES_REVISION : review.headSha,
   anchor: {
     baseSha: review.mergeBaseSha,
     oldPath: lineRecord.oldPath,
@@ -92,7 +93,7 @@ const remapComment = (comment, catalog, nextReview) => {
   return {
     ...comment,
     status: 'stale',
-    sourceHeadSha: nextReview.headSha
+    sourceHeadSha: nextReview.selectedCommit === 'LOCAL_CHANGES' ? LOCAL_CHANGES_REVISION : nextReview.headSha
   };
 };
 
@@ -111,7 +112,7 @@ const matchesCommentPath = (comment, entry) => {
 const hydrateComment = (comment, lineRecord, nextReview, status) => ({
   ...comment,
   status,
-  sourceHeadSha: nextReview.headSha,
+  sourceHeadSha: nextReview.selectedCommit === 'LOCAL_CHANGES' ? LOCAL_CHANGES_REVISION : nextReview.headSha,
   anchor: {
     baseSha: nextReview.mergeBaseSha,
     oldPath: lineRecord.oldPath,
