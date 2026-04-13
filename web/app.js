@@ -9,6 +9,8 @@ import { watchRefresh } from './use-cases/watch-refresh.js';
 import { createHttpReviewPort } from './adapters/http-review-port.js';
 import { createShellRenderer } from './adapters/dom-renderer.js';
 
+const COPY_FEEDBACK_DURATION_MS = 1500;
+
 const bootstrap = async () => {
   const port = createHttpReviewPort();
   const state = createShellState();
@@ -24,15 +26,15 @@ const bootstrap = async () => {
         state.error = error.message;
         state.isLoading = false;
       }
-      renderer.render(state);
+      renderShell();
     },
     onDiffModeChange: (mode) => {
       state.diffMode = mode;
-      renderer.render(state);
+      renderShell();
     },
     onFileSelect: (path) => {
       state.selectedPath = path;
-      renderer.render(state);
+      renderShell();
     },
     onLargeFileFetch: async (path) => {
       if (state.expandedPaths.includes(path)) {
@@ -41,7 +43,7 @@ const bootstrap = async () => {
       state.expandedPaths = state.expandedPaths.concat(path);
       state.selectedPath = path;
       state.isLoading = true;
-      renderer.render(state);
+      renderShell();
       try {
         const review = await port.loadReview(state.review?.baseBranch, state.expandedPaths);
         state.review = review;
@@ -51,7 +53,7 @@ const bootstrap = async () => {
         state.error = error.message;
         state.isLoading = false;
       }
-      renderer.render(state);
+      renderShell();
     },
     onLineSelect: (payload) => {
       const catalog = buildLineCatalog(state.review);
@@ -64,12 +66,12 @@ const bootstrap = async () => {
         path: record?.path || payload.path,
         status: existing?.status || 'active'
       };
-      renderer.render(state);
+      renderShell();
     },
     onCommentCancel: () => {
       state.activeCommentId = null;
       state.modalDraft = null;
-      renderer.render(state);
+      renderShell();
     },
     onCommentChange: (body) => {
       state.modalDraft.body = body;
@@ -85,7 +87,7 @@ const bootstrap = async () => {
       saveStoredComments(storage, activeScope(state.repoContext, state.review), state.comments);
       state.activeCommentId = null;
       state.modalDraft = null;
-      renderer.render(state);
+      renderShell();
     },
     onCommentDelete: () => {
       state.comments = state.comments.filter((comment) => comment.id !== state.activeCommentId);
@@ -93,20 +95,25 @@ const bootstrap = async () => {
       saveStoredComments(storage, activeScope(state.repoContext, state.review), state.comments);
       state.activeCommentId = null;
       state.modalDraft = null;
-      renderer.render(state);
+      renderShell();
     },
     onCopyToClipboard: async () => {
-      await exportComments(port, state, { onClipboardFallback: () => renderer.render(state) });
-      renderer.render(state);
+      resetCopyFeedback();
+      renderShell();
+      await exportComments(port, state, {
+        onClipboardCopySuccess: startCopyFeedbackReset,
+        onClipboardFallback: renderShell
+      });
+      renderShell();
     },
     onClipboardFallbackClose: () => {
       state.clipboardFallbackText = '';
-      renderer.render(state);
+      renderShell();
     },
     onRefresh: async () => {
       state.isLoading = true;
       state.error = null;
-      renderer.render(state);
+      renderShell();
 
       try {
         await reloadShell(port, state, storage);
@@ -115,7 +122,7 @@ const bootstrap = async () => {
         state.isLoading = false;
       }
 
-      renderer.render(state);
+      renderShell();
     },
     onStaleCommentSelect: (commentId) => {
       state.activeCommentId = commentId;
@@ -126,7 +133,7 @@ const bootstrap = async () => {
         path: comment?.mapping.path || '',
         status: comment?.status || 'stale'
       };
-      renderer.render(state);
+      renderShell();
     },
     onInlineCommentToggle: (commentId) => {
       if (state.collapsedCommentIds.includes(commentId)) {
@@ -134,11 +141,35 @@ const bootstrap = async () => {
       } else {
         state.collapsedCommentIds = state.collapsedCommentIds.concat(commentId);
       }
-      renderer.render(state);
+      renderShell();
     }
   });
+  let copyFeedbackResetId = null;
 
-  renderer.render(state);
+  const renderShell = () => {
+    renderer.render(state);
+  };
+
+  const resetCopyFeedback = () => {
+    if (copyFeedbackResetId !== null) {
+      window.clearTimeout(copyFeedbackResetId);
+      copyFeedbackResetId = null;
+    }
+    state.clipboardCopied = false;
+  };
+
+  const startCopyFeedbackReset = () => {
+    if (copyFeedbackResetId !== null) {
+      window.clearTimeout(copyFeedbackResetId);
+    }
+    copyFeedbackResetId = window.setTimeout(() => {
+      state.clipboardCopied = false;
+      copyFeedbackResetId = null;
+      renderShell();
+    }, COPY_FEEDBACK_DURATION_MS);
+  };
+
+  renderShell();
 
   try {
     await loadShell(port, state, storage);
@@ -147,8 +178,8 @@ const bootstrap = async () => {
     state.isLoading = false;
   }
 
-  renderer.render(state);
-  watchRefresh(window, port, state, () => renderer.render(state));
+  renderShell();
+  watchRefresh(window, port, state, renderShell);
 };
 
 bootstrap();

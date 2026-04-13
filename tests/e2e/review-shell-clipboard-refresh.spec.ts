@@ -20,14 +20,18 @@ test('copies grouped comment export to the clipboard', async ({ page }) => {
   try {
     await page.goto(server.url);
 
+    const copyButton = page.getByTestId('copy-button');
+    await expect(copyButton).toHaveText('Copy to clipboard');
+
     await addComment(page, 'feature line', 'src comment');
     await page.getByRole('button', { name: 'readme.md' }).click();
     await addComment(page, 'changed docs', 'docs comment');
 
-    await page.getByTestId('copy-button').click();
+    await copyButton.click();
 
     await page.waitForFunction(() => window.__copiedText !== null);
     const copiedText = await page.evaluate(() => window.__copiedText);
+    await expect(copyButton).toHaveText('Copied');
     expect(copiedText).toMatch(/src\/lib\.rs - [0-9a-f]{40}/);
     expect(copiedText).toContain('docs/readme.md - ');
     expect(copiedText).toContain('Comment: src comment');
@@ -40,15 +44,27 @@ test('copies grouped comment export to the clipboard', async ({ page }) => {
   }
 });
 
-test('shows a fallback export modal when Clipboard API write fails', async ({ page }) => {
+test('clears stale copied feedback before showing a fallback export modal on retry failure', async ({ page }) => {
   const repo = createRepoFixture();
   const server = await startServer(repo.path);
 
   await page.addInitScript(() => {
+    window.__clipboardWriteAttempts = 0;
+    window.__copyButtonTextDuringClipboardWrite = null;
+
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
         writeText: async () => {
+          window.__clipboardWriteAttempts += 1;
+          if (window.__clipboardWriteAttempts === 1) {
+            return;
+          }
+
+          const copyButton = document.querySelector('[data-testid="copy-button"]');
+          window.__copyButtonTextDuringClipboardWrite = copyButton instanceof HTMLElement
+            ? copyButton.innerText.trim()
+            : null;
           throw new Error('denied');
         }
       }
@@ -59,9 +75,16 @@ test('shows a fallback export modal when Clipboard API write fails', async ({ pa
     await page.goto(server.url);
 
     await addComment(page, 'feature line', 'fallback note');
-    await page.getByTestId('copy-button').click();
+    const copyButton = page.getByTestId('copy-button');
+    await copyButton.click();
+
+    await expect(copyButton).toHaveText('Copied');
+
+    await copyButton.click();
 
     await expect(page.getByTestId('clipboard-fallback-modal')).toBeVisible();
+    expect(await page.evaluate(() => window.__copyButtonTextDuringClipboardWrite)).not.toBe('Copied');
+    await expect(copyButton).not.toHaveText('Copied');
     await expect(page.getByTestId('clipboard-fallback-text')).toHaveValue(/fallback note/);
   } finally {
     stopServer(server.process);
@@ -73,27 +96,44 @@ test('shows an error banner when clipboard export generation fails', async ({ pa
   const repo = createRepoFixture();
   const server = await startServer(repo.path);
   const pageErrors: string[] = [];
-
-  page.on('pageerror', (error) => {
-    pageErrors.push(error.message);
+  let releaseClipboardExportResponse = () => {};
+  let resolveClipboardExportStarted = () => {};
+  const clipboardExportStarted = new Promise<void>((resolve) => {
+    resolveClipboardExportStarted = resolve;
   });
 
   await page.route('**/api/clipboard-export', async (route) => {
-    await route.fulfill({
-      status: 500,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'clipboard export failed' })
+      resolveClipboardExportStarted();
+      await new Promise<void>((release) => {
+        releaseClipboardExportResponse = release;
+      });
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'clipboard export failed' })
+      });
     });
+
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
   });
 
   try {
     await page.goto(server.url);
 
     await addComment(page, 'feature line', 'backend export note');
-    await page.getByTestId('copy-button').click();
+    const copyButton = page.getByTestId('copy-button');
+    await copyButton.click();
+    await clipboardExportStarted;
+
+    await expect(copyButton).toHaveText('Copy to clipboard');
+    await expect(copyButton).not.toHaveText('Copied');
+
+    releaseClipboardExportResponse();
 
     await expect(page.getByTestId('error-banner')).toContainText('clipboard export failed');
     await expect(page.getByTestId('clipboard-fallback-modal')).toBeHidden();
+    await expect(copyButton).not.toHaveText('Copied');
     expect(pageErrors).toEqual([]);
   } finally {
     stopServer(server.process);

@@ -11,8 +11,10 @@ export const exportComments = async (port, state, hooks) => {
 
   try {
     await navigator.clipboard.writeText(text);
+    state.clipboardCopied = true;
     state.clipboardFallbackText = '';
     state.error = null;
+    hooks.onClipboardCopySuccess?.();
   } catch {
     state.clipboardFallbackText = text;
     hooks.onClipboardFallback?.();

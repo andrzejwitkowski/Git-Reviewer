@@ -14,7 +14,7 @@ export const createShellRenderer = (documentRef, hooks) => {
       renderBranches(nodes.baseBranch, state.repoContext, state.review);
       renderTree(nodes.fileTree, state, hooks);
       renderRefresh(nodes.refreshButton, state.pendingRefresh);
-      renderCopyButton(nodes.copyButton, state.comments.length > 0);
+      renderCopyButton(nodes.copyButton, state.comments.length > 0, state.clipboardCopied);
       renderDiff(nodes.diffView, state, hooks);
       renderStaleComments(nodes.staleComments, state, hooks);
       renderCommentModal(nodes.commentModal, state, hooks);
@@ -62,8 +62,11 @@ const renderRefresh = (button, pendingRefresh) => {
   button.classList.toggle('hidden', !pendingRefresh);
 };
 
-const renderCopyButton = (button, hasComments) => {
+const renderCopyButton = (button, hasComments, copied) => {
+  const showCopiedState = hasComments && copied;
   button.disabled = !hasComments;
+  button.textContent = showCopiedState ? 'Copied' : 'Copy to clipboard';
+  button.classList.toggle('is-success', showCopiedState);
   button.removeAttribute('title');
 };
 

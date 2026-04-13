@@ -8,6 +8,7 @@ export const createShellState = () => ({
   diffMode: 'unified',
   comments: [],
   activeCommentId: null,
+  clipboardCopied: false,
   clipboardFallbackText: '',
   pendingRefresh: false,
   error: null,
