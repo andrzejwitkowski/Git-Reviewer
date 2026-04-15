@@ -4,7 +4,10 @@ use git_reviewer::adapters::outbound::git_cli::GitCliRepository;
 use git_reviewer::application::ports::git_repository::{GitRepository, GitRepositoryError};
 use git_reviewer::application::use_cases::load_review::{LoadReview, LoadReviewRequest};
 use git_reviewer::domain::review::{DiffChange, ReviewMode};
+use std::fs;
+use std::process::Command;
 use support::git_repo::TempGitRepo;
+use tempfile::tempdir;
 
 #[test]
 fn git_cli_repository_lists_branch_commits_newest_first() {
@@ -91,6 +94,95 @@ fn git_cli_repository_returns_local_changes_diff() {
     assert_eq!(diff.merge_base_sha, head_sha);
     assert_eq!(diff.head_sha, head_sha);
     assert!(diff.diff.contains("+worktree"));
+}
+
+#[test]
+fn git_cli_repository_includes_untracked_files_in_local_changes_diff() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("tracked.txt", "base\n");
+    repo.commit_all("base");
+    repo.write_file("notes/untracked.txt", "new file\n");
+
+    let repository = GitCliRepository::new(repo.path());
+    let diff = repository
+        .raw_local_changes_diff()
+        .expect("local changes diff should load");
+
+    assert!(diff
+        .diff
+        .contains("diff --git a/dev/null b/notes/untracked.txt"));
+    assert!(diff.diff.contains("+++ b/notes/untracked.txt"));
+    assert!(diff.diff.contains("+new file"));
+}
+
+#[test]
+fn git_cli_repository_separates_multiple_untracked_patches_in_local_changes_diff() {
+    let repo = TempGitRepo::new();
+
+    repo.write_file("tracked.txt", "base\n");
+    repo.commit_all("base");
+    repo.write_file("notes/first.txt", "first file\n");
+    repo.write_file("notes/second.txt", "second file\n");
+
+    let repository = GitCliRepository::new(repo.path());
+    let diff = repository
+        .raw_local_changes_diff()
+        .expect("local changes diff should load");
+
+    assert!(diff
+        .diff
+        .contains("diff --git a/dev/null b/notes/first.txt\nindex "));
+    assert!(diff
+        .diff
+        .contains("+first file\ndiff --git a/dev/null b/notes/second.txt"));
+}
+
+#[test]
+fn git_cli_repository_includes_untracked_files_from_linked_worktree_local_changes() {
+    let root = tempdir().expect("temp dir should be created");
+    let root_path = root.path();
+
+    run_git(root_path, &["init", "-b", "main"]);
+    run_git(root_path, &["config", "user.name", "Git Reviewer"]);
+    run_git(
+        root_path,
+        &["config", "user.email", "git-reviewer@example.com"],
+    );
+    fs::write(root_path.join("tracked.txt"), "base\n").expect("tracked file should be written");
+    run_git(root_path, &["add", "tracked.txt"]);
+    run_git(root_path, &["commit", "-m", "base"]);
+
+    let worktree_path = root_path.join("worktrees").join("feature-review");
+    if let Some(parent) = worktree_path.parent() {
+        fs::create_dir_all(parent).expect("worktree parent should be created");
+    }
+    run_git(
+        root_path,
+        &[
+            "worktree",
+            "add",
+            worktree_path
+                .to_str()
+                .expect("worktree path should be utf8"),
+            "-b",
+            "feature/review",
+        ],
+    );
+    fs::create_dir_all(worktree_path.join("notes")).expect("notes dir should be created");
+    fs::write(
+        worktree_path.join("notes").join("linked.txt"),
+        "linked file\n",
+    )
+    .expect("linked worktree file should be written");
+
+    let repository = GitCliRepository::new(&worktree_path);
+    let diff = repository
+        .raw_local_changes_diff()
+        .expect("linked worktree local changes should load");
+
+    assert!(diff.diff.contains("+++ b/notes/linked.txt"));
+    assert!(diff.diff.contains("+linked file"));
 }
 
 #[test]
@@ -305,4 +397,20 @@ fn repo_snapshot_parses_renames_and_quoted_paths() {
         .entries
         .iter()
         .any(|entry| entry.code == "??" && entry.path == "spaced name.txt"));
+}
+
+fn run_git(cwd: &std::path::Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("git command should execute");
+
+    assert!(
+        output.status.success(),
+        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

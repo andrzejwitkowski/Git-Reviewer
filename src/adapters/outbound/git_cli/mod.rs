@@ -195,6 +195,8 @@ impl GitRepository for GitCliRepository {
             GitRepositoryError::ReviewDiffUnavailable,
         )?;
         let mut diff = tracked_diff;
+        let empty_file = EmptyDiffSource::create(&self.repo_path)?;
+        let empty_path = empty_file.path_string();
 
         for path in untracked.lines().filter(|line| !line.is_empty()) {
             let file_diff = self.run_raw_with_allowed_statuses(
@@ -205,13 +207,19 @@ impl GitRepository for GitCliRepository {
                     "--no-color",
                     "--no-index",
                     "--",
-                    "NUL",
+                    &empty_path,
                     path,
                 ],
                 &[1],
                 GitRepositoryError::ReviewDiffUnavailable,
             )?;
-            diff.push_str(&normalize_untracked_diff(&file_diff, path));
+            if !diff.is_empty() && !diff.ends_with('\n') {
+                diff.push('\n');
+            }
+            diff.push_str(&normalize_untracked_diff(&file_diff, &empty_path, path));
+            if !diff.ends_with('\n') {
+                diff.push('\n');
+            }
         }
 
         Ok(RawReviewDiff {
@@ -296,9 +304,65 @@ fn parse_commit_summary(line: &str) -> ReviewCommitSummary {
     }
 }
 
-fn normalize_untracked_diff(diff: &str, path: &str) -> String {
-    diff.replace("a/NUL", "a/dev/null")
-        .replace("b/NUL", &format!("b/{path}"))
+fn normalize_untracked_diff(diff: &str, empty_path: &str, path: &str) -> String {
+    let diff_header = format!(" b/{path}");
+    let source = format!("--- a/{empty_path}");
+    let alt_source = format!("--- a/{}", empty_path.trim_start_matches('/'));
+    let target = format!("+++ b/{path}");
+
+    diff.lines()
+        .map(|line| {
+            if line.starts_with("diff --git a/") && line.ends_with(&diff_header) {
+                format!("diff --git a/dev/null{diff_header}")
+            } else if line == source || line == alt_source {
+                "--- a/dev/null".to_string()
+            } else if line == format!("+++ b/{empty_path}") {
+                target.clone()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+struct EmptyDiffSource {
+    path: PathBuf,
+}
+
+impl EmptyDiffSource {
+    fn create(repo_path: &Path) -> Result<Self, GitRepositoryError> {
+        let git_dir = Command::new("git")
+            .args(["rev-parse", "--git-dir"])
+            .current_dir(repo_path)
+            .output()
+            .map_err(|_| GitRepositoryError::ReviewDiffUnavailable)?;
+
+        if !git_dir.status.success() {
+            return Err(GitRepositoryError::ReviewDiffUnavailable);
+        }
+
+        let git_dir = String::from_utf8(git_dir.stdout)
+            .map_err(|_| GitRepositoryError::ReviewDiffUnavailable)?;
+        let git_dir = git_dir.trim_end_matches('\n');
+        let path = repo_path
+            .join(git_dir)
+            .join(format!("git-reviewer-empty-{}", std::process::id()));
+
+        std::fs::write(&path, b"").map_err(|_| GitRepositoryError::ReviewDiffUnavailable)?;
+
+        Ok(Self { path })
+    }
+
+    fn path_string(&self) -> String {
+        self.path.to_string_lossy().into_owned()
+    }
+}
+
+impl Drop for EmptyDiffSource {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 fn decode_status_path(path: &str) -> String {

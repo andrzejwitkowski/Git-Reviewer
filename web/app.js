@@ -98,7 +98,7 @@ const bootstrap = async () => {
       }
       renderShell();
     },
-    onLineSelect: (payload) => {
+    onCommentCreateRequest: (payload) => {
       const catalog = buildLineCatalog(state.review);
       const record = catalog.byKey.get(payload.lineKey);
       const existing = commentIndex(state.comments).get(payload.lineKey) || null;

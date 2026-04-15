@@ -139,19 +139,26 @@ const renderLine = (file, line, diffMode, comments, collapsedCommentIds) => {
     : { side: 'head', number: line.newLineNumber, path: file.newPath || file.path };
   const comment = primary.number == null ? null : comments.get(`${primary.path}::${primary.side}::${primary.number}`);
   const inlineComment = comment ? renderInlineComment(comment, diffMode, collapsedCommentIds.includes(comment.id)) : '';
-  const marker = comment ? '<button type="button" class="comment-marker" data-testid="comment-marker">1</button>' : '';
+  const addGutter = renderCommentAddGutter(primary, comment);
+  const marker = renderCommentMarker(comment);
   const attributes = primary.number == null
     ? ''
     : ` data-line-key="${primary.path}::${primary.side}::${primary.number}" data-path="${primary.path}"`;
   const highlighted = `<span class="diff-code">${renderHighlightedCode(file.path, line.text)}</span>`;
 
   if (diffMode === 'split') {
+    const leftMarker = line.kind === 'removed' ? marker : '';
+    const rightMarker = line.kind === 'removed' ? '' : marker;
+    const leftGutter = line.kind === 'added' ? '<td class="comment-add-gutter"></td>' : addGutter;
+    const rightGutter = line.kind === 'removed' ? '<td class="comment-add-gutter"></td>' : addGutter;
     return `
       <tr class="diff-line diff-line-${line.kind}" data-testid="diff-line" data-kind="${line.kind}"${attributes}>
         <td class="line-number">${line.oldLineNumber ?? ''}</td>
-        <td>${line.kind === 'added' ? '' : highlighted}</td>
+        ${leftGutter}
+        <td>${line.kind === 'added' ? '' : `${highlighted}${leftMarker}`}</td>
         <td class="line-number">${line.newLineNumber ?? ''}</td>
-        <td>${line.kind === 'removed' ? '' : `${highlighted} ${marker}`}</td>
+        ${rightGutter}
+        <td>${line.kind === 'removed' ? '' : `${highlighted}${rightMarker}`}</td>
       </tr>
       ${inlineComment}
     `;
@@ -161,10 +168,31 @@ const renderLine = (file, line, diffMode, comments, collapsedCommentIds) => {
     <tr class="diff-line diff-line-${line.kind}" data-testid="diff-line" data-kind="${line.kind}"${attributes}>
       <td class="line-number">${line.oldLineNumber ?? ''}</td>
       <td class="line-number">${line.newLineNumber ?? ''}</td>
-      <td>${highlighted} ${marker}</td>
+      ${addGutter}
+      <td>${highlighted}${marker}</td>
     </tr>
     ${inlineComment}
   `;
+};
+
+const renderCommentAddGutter = (primary, comment) => {
+  if (primary.number == null) {
+    return '<td class="comment-add-gutter"></td>';
+  }
+
+  if (comment) {
+    return '<td class="comment-add-gutter"></td>';
+  }
+
+  return '<td class="comment-add-gutter" data-testid="comment-add-gutter"><button type="button" class="comment-add-trigger" data-testid="comment-add-trigger" aria-label="Add comment">+</button></td>';
+};
+
+const renderCommentMarker = (comment) => {
+  if (!comment) {
+    return '';
+  }
+
+  return ' <button type="button" class="comment-marker" data-testid="comment-marker">1</button>';
 };
 
 const renderInlineComment = (comment, diffMode, collapsed) => {
@@ -173,7 +201,7 @@ const renderInlineComment = (comment, diffMode, collapsed) => {
   return `
   <tr class="inline-comment-row" data-testid="inline-comment" data-comment-id="${comment.id}">
     <td class="line-number"></td>
-    <td data-testid="inline-comment-cell" colspan="${diffMode === 'split' ? '3' : '2'}">
+    <td data-testid="inline-comment-cell" colspan="${diffMode === 'split' ? '5' : '3'}">
       <div class="inline-comment-card">
         <div class="inline-comment-header" data-testid="inline-comment-header">
           <button type="button" class="inline-comment-toggle" data-testid="inline-comment-toggle" data-comment-id="${comment.id}">
@@ -195,9 +223,19 @@ const attachLineEvents = (node, hooks) => {
   node.querySelectorAll('[data-testid="diff-line"]').forEach((line) => {
     line.addEventListener('mouseenter', () => line.classList.add('is-hovered'));
     line.addEventListener('mouseleave', () => line.classList.remove('is-hovered'));
-    if (line.dataset.lineKey) {
-      line.addEventListener('click', () => hooks.onLineSelect({ lineKey: line.dataset.lineKey, path: line.dataset.path }));
+    if (line.dataset.lineKey && line.querySelector('[data-testid="comment-marker"]')) {
+      line.addEventListener('click', () => hooks.onCommentCreateRequest({ lineKey: line.dataset.lineKey, path: line.dataset.path }));
     }
+  });
+  node.querySelectorAll('[data-testid="comment-add-trigger"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const line = button.closest('[data-testid="diff-line"]');
+      if (!line?.dataset.lineKey) {
+        return;
+      }
+      hooks.onCommentCreateRequest({ lineKey: line.dataset.lineKey, path: line.dataset.path });
+    });
   });
 };
 

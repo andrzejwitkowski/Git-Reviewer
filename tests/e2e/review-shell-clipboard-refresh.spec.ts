@@ -360,7 +360,8 @@ test('refresh in LOCAL CHANGES remaps comments when the worktree diff changes', 
 
 async function addComment(page: import('@playwright/test').Page, lineText: string, body: string) {
   const line = page.getByTestId('diff-line').filter({ hasText: lineText });
-  await line.click();
+  await line.hover();
+  await line.getByTestId('comment-add-trigger').click();
   await page.getByTestId('comment-body').fill(body);
   await page.getByRole('button', { name: 'Save comment' }).click();
 }
